@@ -1,0 +1,10 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "django-rebac"
+version = "0.0.2"
+description = "A declarative, strictly-typed ReBAC framework for Django."
+readme = "README.md"
+requires-python = ">=3.12"
