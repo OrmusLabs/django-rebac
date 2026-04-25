@@ -1,0 +1,122 @@
+# .pre-commit-config.yaml
+# Install: pip install pre-commit && pre-commit install
+# Run manually: pre-commit run --all-files
+# Update hooks: pre-commit autoupdate
+
+default_stages: [pre-commit]
+
+# Global excludes for Django projects
+exclude: |
+  (?x)^(
+    .*/migrations/.*|
+    .*/static/.*|
+    .*/media/.*|
+    .*/.venv/.*|
+    .*\.pyc$
+  )$
+
+repos:
+  # =============================================================================
+  # General File Checks
+  # =============================================================================
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        exclude: ^mkdocs\.yml$
+      - id: check-json
+        exclude: ^\.vscode/.*\.json$
+      - id: check-toml
+      - id: check-added-large-files
+        args: ["--maxkb=500"]
+      - id: detect-private-key
+      - id: fix-byte-order-marker
+      - id: mixed-line-ending
+        args: ["--fix=lf"]
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: check-docstring-first
+        exclude: ^src/rebac/conf\.py$
+      - id: debug-statements  # Catches breakpoint(), pdb, etc.
+      # Prevent direct commits to main (allow version tags)
+      - id: no-commit-to-branch
+        args: [--branch, main, --pattern, '^v\d+\.\d+\.\d+.*$']
+
+  # =============================================================================
+  # Python Linting & Formatting (Ruff)
+  # Replaces: Black, isort, flake8, pyupgrade
+  # =============================================================================
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.4
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+        types_or: [python, pyi, jupyter]
+      - id: ruff-format
+        types_or: [python, pyi, jupyter]
+
+  # =============================================================================
+  # Django Template Linting
+  # =============================================================================
+  - repo: https://github.com/djlint/djLint
+    rev: v1.36.4
+    hooks:
+      - id: djlint-reformat-django
+      - id: djlint-django
+
+  # =============================================================================
+  # Django Syntax Upgrades
+  # =============================================================================
+  - repo: https://github.com/adamchainz/django-upgrade
+    rev: '1.30.0'
+    hooks:
+      - id: django-upgrade
+        args: [--target-version, "5.2"]  # Set to your Django version
+
+  # =============================================================================
+  # Type Checking (Mypy)
+  # =============================================================================
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.19.1
+    hooks:
+      - id: mypy
+        # Adjust 'files' to match your project source directory
+        files: ^src/
+        # Migrations are auto-generated; exclude them to save time
+        exclude: ^src/.*/migrations/
+        args: [
+          "--no-error-summary",
+          "--show-error-codes",
+          "--namespace-packages",
+          "--explicit-package-bases",
+          "--config-file=mypy-pre-commit.ini",
+          "--no-error-summary",
+          "--show-error-codes"
+        ]
+        additional_dependencies:
+          - "types-requests"
+          - "django-environ>=0.11.0"
+          - "types-PyYAML"
+          - "python-dotenv>=1.0.0"
+          - "pytest"
+
+  # =============================================================================
+  # Security Scanning
+  # =============================================================================
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.9.4
+    hooks:
+      - id: bandit
+        args: ["-c", "pyproject.toml"]
+        additional_dependencies: ["bandit[toml]"]
+
+  # =============================================================================
+  # Commit Message Linting
+  # =============================================================================
+  - repo: https://github.com/commitizen-tools/commitizen
+    rev: v4.13.9
+    hooks:
+      - id: commitizen
+        stages: [commit-msg]
