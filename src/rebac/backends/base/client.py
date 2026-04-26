@@ -50,3 +50,17 @@ class BaseReBACBackend(ABC):
     def delete_tuples(self, tuples: list[dict[str, str]]) -> None:
         """Deletes relationships from the ReBAC store."""
         pass
+
+    @abstractmethod
+    def batch_check(self, checks: list[dict[str, str]]) -> dict[str, dict[str, bool]]:
+        """
+        Executes a batch of authorization checks in a single network request.
+
+        Args:
+            checks: A list of dictionaries, each containing 'user', 'relation', and 'object'.
+
+        Returns:
+            dict[str, dict[str, bool]]: A fast-lookup mapping formatted as:
+                                        { "object_id": { "relation": True/False } }
+        """
+        pass

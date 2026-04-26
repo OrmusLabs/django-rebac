@@ -1,8 +1,4 @@
 # rebac/serializers.py
-from openfga_sdk.client.models import (
-    ClientBatchCheckItem,
-    ClientBatchCheckRequest,
-)
 from rest_framework import serializers
 
 from ..conf import get_setting
@@ -50,13 +46,11 @@ class RebacPermissionSerializerMixin(serializers.Serializer):
             return {}
 
         object_key = f"{rebac_object_type}:{obj.pk}"
-
-        # 1. LIST VIEW PATH: Try to read from the cached Batch Map
         batch_map = self.context.get("rebac_permissions_map")
+
         if batch_map is not None:
             return batch_map.get(object_key, {perm: False for perm in rebac_permissions})
 
-        # 2. DETAIL VIEW PATH: Fallback for single item fetches
         request = self.context.get("request")
         if not request:
             return {perm: False for perm in rebac_permissions}
@@ -67,24 +61,13 @@ class RebacPermissionSerializerMixin(serializers.Serializer):
         if not rebac_user:
             return {perm: False for perm in rebac_permissions}
 
+        # Build pure agnostic checks for the single detail object
+        checks = [
+            {"user": rebac_user, "relation": p, "object": object_key} for p in rebac_permissions
+        ]
+
         rebac_client = get_rebac_client()
-        results = {}
+        results_map = rebac_client.batch_check(checks)
 
-        try:
-            # Run a mini-batch check for the single object's multiple permissions
-            checks = [
-                ClientBatchCheckItem(user=rebac_user, relation=p, object=object_key)
-                for p in rebac_permissions
-            ]
-            batch_request = ClientBatchCheckRequest(checks=checks)
-            batch_response = rebac_client.batch_check(batch_request)
-
-            for resp in batch_response.responses:
-                req = getattr(resp, "_request", getattr(resp, "request", None))
-                if req:
-                    results[req.relation] = resp.allowed
-
-            return results
-        except Exception as e:
-            logger.error(f"Serializer Single Check Failed: {e}")
-            return {perm: False for perm in rebac_permissions}
+        # Safe extraction from the map
+        return results_map.get(object_key, {perm: False for perm in rebac_permissions})

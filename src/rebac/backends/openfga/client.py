@@ -3,6 +3,8 @@ import logging
 
 from openfga_sdk.client import ClientConfiguration
 from openfga_sdk.client.models import (
+    ClientBatchCheckItem,
+    ClientBatchCheckRequest,
     ClientCheckRequest,
     ClientListObjectsRequest,
     ClientTuple,
@@ -154,3 +156,41 @@ class OpenFGABackend(BaseReBACBackend):
         request = ClientWriteRequest(writes=[], deletes=fga_deletes)
 
         self.client.write(request)
+
+    def batch_check(self, checks: list[dict[str, str]]) -> dict[str, dict[str, bool]]:
+        """
+        Translates agnostic batch checks into OpenFGA SDK BatchRequests.
+        """
+        if not checks:
+            return {}
+
+        fga_checks = [
+            ClientBatchCheckItem(
+                user=check["user"], relation=check["relation"], object=check["object"]
+            )
+            for check in checks
+        ]
+
+        batch_request = ClientBatchCheckRequest(checks=fga_checks)
+        results_map: dict[str, dict[str, bool]] = {}
+
+        try:
+            batch_response = self.client.batch_check(batch_request)
+
+            for resp in batch_response.responses:
+                # Safely read from the SDK response object
+                req = getattr(resp, "_request", getattr(resp, "request", None))
+                if not req:
+                    continue
+
+                obj_key = req.object
+                rel = req.relation
+
+                if obj_key not in results_map:
+                    results_map[obj_key] = {}
+                results_map[obj_key][rel] = resp.allowed
+
+        except Exception as e:
+            logger.error(f"OpenFGA Batch Check Failed: {e}")
+
+        return results_map
