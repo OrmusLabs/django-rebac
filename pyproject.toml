@@ -91,8 +91,8 @@ python_files = ["test_*.py"]
 addopts = [
     "--strict-markers",
     "--nomigrations",            # Speeds up tests by building DB directly from models
-    # "--cov=src/rebac", # Target directory for coverage
-    # "--cov-report=term-missing", # Show exact lines missing coverage in terminal
+    "--cov=src/rebac", # Target directory for coverage
+    "--cov-report=term-missing", # Show exact lines missing coverage in terminal
     # "--cov-report=html",         # Generate a beautiful HTML report
 ]
 # Define custom markers to organize tests

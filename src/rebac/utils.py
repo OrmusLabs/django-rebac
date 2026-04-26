@@ -1,4 +1,4 @@
-# fga_data_sync/utils.py
+# rebac/utils.py
 import importlib
 from functools import lru_cache
 from typing import Any
@@ -7,8 +7,7 @@ from django.core.exceptions import ImproperlyConfigured
 from django.core.signals import setting_changed
 from django.dispatch import receiver
 
-from rebac.backends.base import BaseReBACBackend
-
+from .backends.base import BaseReBACBackend
 from .conf import get_setting
 
 

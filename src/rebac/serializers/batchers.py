@@ -1,4 +1,4 @@
-# fga_data_sync/batchers.py
+# rebac/batchers.py
 from openfga_sdk.client.models import ClientBatchCheckItem, ClientBatchCheckRequest
 from rest_framework import serializers
 

@@ -1,4 +1,4 @@
-# fga_data_sync/apps.py
+# rebac/apps.py
 from django.apps import AppConfig
 
 
