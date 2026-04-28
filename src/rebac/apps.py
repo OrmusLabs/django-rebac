@@ -8,6 +8,7 @@ class ReBACConfig(AppConfig):
     verbose_name = "ReBAC"
 
     def ready(self):
+
         from .conf import validate_settings
 
         # Run validation as soon as Django starts

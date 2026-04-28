@@ -23,14 +23,14 @@ class TestOpenFGABackend:
     # ==========================================
     # 🧪 1. CHECK EXCEPTIONS
     # ==========================================
-    def test_check_validation_exception_raises_schema_error(self, fga_backend):
+    def test_check_validation_exception_raises_schema_error(self, fga_backend: OpenFGABackend):
         """Verifies DSL mismatch errors are correctly translated to RebacSchemaError."""
         fga_backend.client.check.side_effect = ValidationException("Invalid relation")
 
         with pytest.raises(RebacSchemaError, match="ReBAC Schema Mismatch"):
             fga_backend.check("user:bob", "fake_relation", "document:1")
 
-    def test_check_generic_exception_raises_connection_error(self, fga_backend):
+    def test_check_generic_exception_raises_connection_error(self, fga_backend: OpenFGABackend):
         """Verifies network failures are translated to RebacConnectionError."""
         fga_backend.client.check.side_effect = Exception("Network timeout")
 
@@ -40,7 +40,7 @@ class TestOpenFGABackend:
     # ==========================================
     # 🧪 2. LIST OBJECTS
     # ==========================================
-    def test_list_objects_success_strips_prefix(self, fga_backend):
+    def test_list_objects_success_strips_prefix(self, fga_backend: OpenFGABackend):
         """Verifies raw IDs are successfully returned without the type prefix."""
         mock_response = MagicMock()
         # SDK returns prefixed strings
@@ -52,14 +52,16 @@ class TestOpenFGABackend:
         assert result == ["10", "25"]
         fga_backend.client.list_objects.assert_called_once()
 
-    def test_list_objects_validation_exception_returns_empty(self, fga_backend):
+    def test_list_objects_validation_exception_returns_empty(self, fga_backend: OpenFGABackend):
         """Verifies querying a non-existent relation safely returns an empty list."""
         fga_backend.client.list_objects.side_effect = ValidationException("Invalid relation")
 
         result = fga_backend.list_objects("user:bob", "fake_relation", "document")
         assert result == []
 
-    def test_list_objects_generic_exception_raises_connection_error(self, fga_backend):
+    def test_list_objects_generic_exception_raises_connection_error(
+        self, fga_backend: OpenFGABackend
+    ):
         """Verifies network failures during list_objects raise a RebacConnectionError."""
         fga_backend.client.list_objects.side_effect = Exception("Network timeout")
 
@@ -69,24 +71,24 @@ class TestOpenFGABackend:
     # ==========================================
     # 🧪 3. WRITE & DELETE EARLY RETURNS
     # ==========================================
-    def test_write_tuples_empty_list_returns_early(self, fga_backend):
+    def test_write_tuples_empty_list_returns_early(self, fga_backend: OpenFGABackend):
         """Verifies passing an empty list bypasses SDK execution."""
         fga_backend.write_tuples([])
         fga_backend.client.write.assert_not_called()
 
-    def test_delete_tuples_empty_list_returns_early(self, fga_backend):
+    def test_delete_tuples_empty_list_returns_early(self, fga_backend: OpenFGABackend):
         """Verifies passing an empty list bypasses SDK execution."""
         fga_backend.delete_tuples([])
         fga_backend.client.write.assert_not_called()
 
-    def test_write_tuples_success(self, fga_backend):
+    def test_write_tuples_success(self, fga_backend: OpenFGABackend):
         """Verifies valid dictionaries are translated to ClientWriteRequests."""
         tuples = [{"user": "user:bob", "relation": "viewer", "object": "document:1"}]
         fga_backend.write_tuples(tuples)
 
         fga_backend.client.write.assert_called_once()
 
-    def test_delete_tuples_success(self, fga_backend):
+    def test_delete_tuples_success(self, fga_backend: OpenFGABackend):
         """Verifies valid dictionaries are translated to ClientWriteRequests."""
         tuples = [{"user": "user:bob", "relation": "viewer", "object": "document:1"}]
         fga_backend.delete_tuples(tuples)
@@ -96,11 +98,11 @@ class TestOpenFGABackend:
     # ==========================================
     # 🧪 4. BATCH CHECKS
     # ==========================================
-    def test_batch_check_empty_list_returns_early(self, fga_backend):
+    def test_batch_check_empty_list_returns_early(self, fga_backend: OpenFGABackend):
         """Verifies an empty batch returns an empty dictionary."""
         assert fga_backend.batch_check([]) == {}
 
-    def test_batch_check_success_parsing(self, fga_backend):
+    def test_batch_check_success_parsing(self, fga_backend: OpenFGABackend):
         """Verifies the adapter correctly parses the OpenFGA Batch Response tree."""
         mock_response = MagicMock()
 
@@ -139,7 +141,7 @@ class TestOpenFGABackend:
 
         assert result == {"document:1": {"viewer": True, "editor": False}}
 
-    def test_batch_check_network_error_fails_gracefully(self, fga_backend):
+    def test_batch_check_network_error_fails_gracefully(self, fga_backend: OpenFGABackend):
         """Verifies network failures during batches return an empty dictionary safely."""
         fga_backend.client.batch_check.side_effect = Exception("SDK Batch Crash")
 
