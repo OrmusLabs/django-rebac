@@ -31,7 +31,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     # ...
     # Dynamically maps gateway headers to request attributes
-    'rebac.middleware.TraefikIdentityMiddleware',
+    'rebac.middleware.GatewayIdentityMiddleware',
 ]
 
 

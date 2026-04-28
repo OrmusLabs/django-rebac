@@ -3,7 +3,7 @@
 The developer protects the API using the `IsRebacAuthorized` permission class or the `RebacViewMixin`.
 
 You do not have to write custom logic to parse identity headers.
-The `TraefikIdentityMiddleware` dynamically extracts your configured gateway headers (e.g., `X-User-Id`) and attaches them to the request automatically.
+The `GatewayIdentityMiddleware` dynamically extracts your configured gateway headers (e.g., `X-User-Id`) and attaches them to the request automatically.
 
 Below is the complete implementation for a full CRUD lifecycle across our `Organization` -> `Folder` -> `Document` hierarchy.
 

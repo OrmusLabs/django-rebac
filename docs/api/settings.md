@@ -45,24 +45,21 @@ To maintain our **Clean Architecture** and strict layer separation, follow these
 
 ```python
 # services.py
-from openfga_sdk.client.models import ClientCheckRequest
 from rebac.utils import get_rebac_client
 
 class DocumentService:
     def publish_document(self, document_id: str, user_id: str):
-        # 1. Fetch the configured (and cached) ReBAC client
+        # 1. Fetch the configured (and cached) agnostic ReBAC client
         rebac_client = get_rebac_client()
 
         # 2. Query ReBAC to ensure the user has the 'editor' role
-        response = rebac_client.check(
-            ClientCheckRequest(
-                user=f"user:{user_id}",
-                relation="editor",
-                object=f"document:{document_id}",
-            )
+        is_allowed = rebac_client.check(
+            user=f"user:{user_id}",
+            relation="editor",
+            obj=f"document:{document_id}"
         )
 
-        if not response.allowed:
+        if not is_allowed:
             raise PermissionError("Only editors can publish this document.")
 
         # ... proceed with publishing business logic ...

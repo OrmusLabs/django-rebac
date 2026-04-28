@@ -53,7 +53,7 @@ class FinanceDashboardView(APIView):
     # 🛡️ THE STATELESS GUARDRAIL
     # Bypasses the local DB and checks the graph directly!
     #
-    # 1. Identity: "user:alice_123" (Auto-extracted by TraefikIdentityMiddleware)
+    # 1. Identity: "user:alice_123" (Auto-extracted by GatewayIdentityMiddleware)
     # 2. Target: "acme_corp" (Extracted from HTTP_X_CONTEXT_ORG_ID via lookup_header)
     #
     # Q: "Does `user:alice_123` have the `can_view_finance_dashboard`

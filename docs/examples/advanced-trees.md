@@ -18,7 +18,6 @@ Here is how you write a single `APIView` that returns the entire tree securely f
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from django.db.models import Prefetch
-from openfga_sdk.client.models import ClientListObjectsRequest
 from rebac.conf import get_setting
 from rebac.utils import get_rebac_client
 
@@ -31,19 +30,18 @@ class SecureHierarchyTreeAPIView(APIView):
     100% ReBAC-secured at every single level, using only 3 DB queries.
     """
 
-    def get_fga_ids(self, rebac_user: str, object_type: str, relation: str) -> list[str]:
+    def get_rebac_ids(self, rebac_user: str, object_type: str, relation: str) -> list[str]:
         """Helper to fetch allowed IDs for a specific type from ReBAC."""
         client = get_rebac_client()
-        response = client.list_objects(
-            ClientListObjectsRequest(
-                user=rebac_user,
-                relation=relation,
-                type=object_type
-            )
+
+        # and automatically strips the prefixes for you.
+        allowed_ids = client.list_objects(
+            user=rebac_user,
+            relation=relation,
+            object_type=object_type
         )
-        # Strip the ReBAC type prefix (e.g., 'document:123' -> '123')
-        prefix = f"{object_type}:"
-        return [obj.replace(prefix, "") for obj in response.objects]
+
+        return allowed_ids
 
     def get(self, request):
         user_attr = get_setting("REBAC_USER_ATTR")
@@ -52,9 +50,9 @@ class SecureHierarchyTreeAPIView(APIView):
             return Response({"error": "Missing identity context."}, status=401)
 
         # STEP 1: Query ReBAC for the allowed IDs (3 Fast Network Calls)
-        allowed_org_ids = self.get_fga_ids(rebac_user, "organization", "can_list_org")
-        allowed_folder_ids = self.get_fga_ids(rebac_user, "folder", "can_list_folder")
-        allowed_doc_ids = self.get_fga_ids(rebac_user, "document", "can_read_document")
+        allowed_org_ids = self.get_rebac_ids(rebac_user, "organization", "can_list_org")
+        allowed_folder_ids = self.get_rebac_ids(rebac_user, "folder", "can_list_folder")
+        allowed_doc_ids = self.get_rebac_ids(rebac_user, "document", "can_read_document")
 
         # STEP 2: Filter the base querysets securely
         secure_docs = Document.objects.filter(id__in=allowed_doc_ids)
@@ -82,7 +80,6 @@ If you prefer using DRF's Generic Views to take advantage of built-in pagination
 from rest_framework import generics
 from rest_framework.exceptions import AuthenticationFailed
 from django.db.models import Prefetch
-from openfga_sdk.client.models import ClientListObjectsRequest
 from rebac.conf import get_setting
 from rebac.utils import get_rebac_client
 
@@ -100,15 +97,15 @@ class SecureHierarchyTreeListAPIView(generics.ListAPIView):
     def get_rebac_ids(self, rebac_user: str, object_type: str, relation: str) -> list[str]:
         """Helper to fetch allowed IDs for a specific type from ReBAC Backend."""
         client = get_rebac_client()
-        response = client.list_objects(
-            ClientListObjectsRequest(
-                user=rebac_user,
-                relation=relation,
-                type=object_type
-            )
+
+        # and automatically strips the prefixes for you.
+        allowed_ids = client.list_objects(
+            user=rebac_user,
+            relation=relation,
+            object_type=object_type
         )
-        prefix = f"{object_type}:"
-        return [obj.replace(prefix, "") for obj in response.objects]
+
+        return allowed_ids
 
     def get_queryset(self):
         """
@@ -116,14 +113,17 @@ class SecureHierarchyTreeListAPIView(generics.ListAPIView):
         and high-performance database Prefetching.
         """
         user_attr = get_setting("REBAC_USER_ATTR")
-        rebac_user = getattr(request, user_attr, None)
+
+        # 🤠 FIX: Changed `request` to `self.request`
+        rebac_user = getattr(self.request, user_attr, None)
         if not rebac_user:
             raise AuthenticationFailed("Missing identity context.")
 
         # STEP 1: Query ReBAC for the allowed IDs
-        allowed_org_ids = self.get_fga_ids(rebac_user, "organization", "can_list_org")
-        allowed_folder_ids = self.get_fga_ids(rebac_user, "folder", "can_list_folder")
-        allowed_doc_ids = self.get_fga_ids(rebac_user, "document", "can_read_document")
+        # 🤠 FIX: Changed `self.get_rebac_client` to `self.get_rebac_ids`
+        allowed_org_ids = self.get_rebac_ids(rebac_user, "organization", "can_list_org")
+        allowed_folder_ids = self.get_rebac_ids(rebac_user, "folder", "can_list_folder")
+        allowed_doc_ids = self.get_rebac_ids(rebac_user, "document", "can_read_document")
 
         # STEP 2: Filter the base querysets securely
         secure_docs = Document.objects.filter(id__in=allowed_doc_ids)
