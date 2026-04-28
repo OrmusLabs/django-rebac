@@ -44,50 +44,51 @@ Configure the package by adding the `REBAC_CONFIG` dictionary to your `settings.
 
 REBAC_CONFIG = {
     # REQUIRED: The Store ID provisioned by the Central Auth Service
-    "OPENFGA_STORE_ID": "01H...XYZ",
-
+    "BACKEND_OPTIONS":{
+        "STORE_ID": "01H...XYZ",
+        "API_URL": "http://localhost:8080",
+    },
     # Core Settings
-    "OPENFGA_API_URL": "http://localhost:8080",
     "BATCH_SIZE": 50,
     "MAX_RETRIES": 5,
 
     # Identity Management (Traefik / API Gateway integration)
     "REQUEST_HEADER_MAPPINGS": {
-        "X-User-Id": "fga_user",
+        "X-User-Id": "rebac_user",
     },
-    "FGA_USER_ATTR": "fga_user",
-    "FGA_USER_PREFIX": "user:",
+    "REBAC_USER_ATTR": "rebac_user",
+    "REBAC_USER_PREFIX": "user:",
 }
 ```
 
 ## 💡 Usage
 
-### 1. Synchronizing Models (`FGAModelSyncMixin`)
+### 1. Synchronizing Models (`RebacModelSyncMixin`)
 
-Inherit from `FGAModelSyncMixin` and define your `fga_config` using the `FGAModelConfig` dataclass. The package handles tuple generation, diffing, and outbox queuing automatically.
+Inherit from `RebacModelSyncMixin` and define your `rebac_config` using the `RebacModelConfig` dataclass. The package handles tuple generation, diffing, and outbox queuing automatically.
 
 ```python
 from django.db import models
 from typing import ClassVar
-from rebac.mixins import FGAModelSyncMixin
-from rebac.structs import FGAModelConfig, FGAParentConfig, FGACreatorConfig
+from rebac.mixins import RebacModelSyncMixin
+from rebac.structs import RebacModelConfig, RebacParentConfig, RebacCreatorConfig
 
-class Document(FGAModelSyncMixin, models.Model):
+class Document(RebacModelSyncMixin, models.Model):
     title = models.CharField(max_length=255)
     folder_id = models.CharField(max_length=255)
     creator_id = models.CharField(max_length=255)
 
-    fga_config: ClassVar[FGAModelConfig] = FGAModelConfig(
+    rebac_config: ClassVar[RebacModelConfig] = RebacModelConfig(
         object_type="document",
         parents=[
-            FGAParentConfig(
+            RebacParentConfig(
                 relation="folder",
                 parent_type="folder",
                 local_field="folder_id"
             )
         ],
         creators=[
-            FGACreatorConfig(
+            RebacCreatorConfig(
                 relation="editor",
                 local_field="creator_id"
             )
@@ -95,22 +96,22 @@ class Document(FGAModelSyncMixin, models.Model):
     )
 ```
 
-### 2. Securing API Views (`FGAViewMixin`)
+### 2. Securing API Views (`RebacViewMixin`)
 
-Secure your DRF endpoints instantly using simple, declarative dictionary configurations. No complex permission classes required. `FGAViewMixin` handles queryset filtering (lists), parent checks (creation), and object checks (updates/deletes).
+Secure your DRF endpoints instantly using simple, declarative dictionary configurations. No complex permission classes required. `RebacViewMixin` handles queryset filtering (lists), parent checks (creation), and object checks (updates/deletes).
 
 ```python
 from rest_framework import viewsets
-from rebac.mixins import FGAViewMixin
-from rebac.structs import FGAViewConfig
+from rebac.mixins import RebacViewMixin
+from rebac.structs import RebacViewConfig
 from .models import Document
 from .serializers import DocumentSerializer
 
-class DocumentViewSet(FGAViewMixin, viewsets.ModelViewSet):
+class DocumentViewSet(RebacViewMixin, viewsets.ModelViewSet):
     queryset = Document.objects.all()
     serializer_class = DocumentSerializer
 
-    fga_config = FGAViewConfig(
+    rebac_config = RebacViewConfig(
         object_type="document",
         read_relation="can_read_document",
         update_relation="can_update",
@@ -124,24 +125,24 @@ class DocumentViewSet(FGAViewMixin, viewsets.ModelViewSet):
     )
 ```
 
-### 3. Frontend Integration (`FGAPermissionSerializerMixin`)
+### 3. Frontend Integration (`RebacPermissionSerializerMixin`)
 
-Inject FGA evaluations directly into your API responses so your frontend knows exactly which action buttons to render. The mixin utilizes advanced custom list serializers to prevent N+1 queries, batching all checks into a single OpenFGA network request.
+Inject ReBAC evaluations directly into your API responses so your frontend knows exactly which action buttons to render. The mixin utilizes advanced custom list serializers to prevent N+1 queries, batching all checks into a single OpenRebac network request.
 
 ```python
 from rest_framework import serializers
-from rebac.serializers import FGAPermissionSerializerMixin
+from rebac.serializers import RebacPermissionSerializerMixin
 from .models import Document
 
-class DocumentSerializer(FGAPermissionSerializerMixin, serializers.ModelSerializer):
+class DocumentSerializer(RebacPermissionSerializerMixin, serializers.ModelSerializer):
     class Meta:
         model = Document
         # The mixin automatically injects "_permissions" into this tuple!
         fields = ("id", "title", "folder_id")
 
         # Declarative rules processed by the mixin
-        fga_object_type = "document"
-        fga_permissions = ("can_update", "can_delete")
+        rebac_object_type = "document"
+        rebac_permissions = ("can_update", "can_delete")
 ```
 
 **Resulting JSON Payload:**
@@ -168,8 +169,8 @@ Configure a Celery Beat sweeper to run periodically as a fail-safe:
 from celery.schedules import crontab
 
 app.conf.beat_schedule = {
-    'fga-outbox-sweeper': {
-        'task': 'rebac.tasks.process_fga_outbox_batch',
+    'rebac-outbox-sweeper': {
+        'task': 'rebac.tasks.process_rebac_outbox_batch',
         'schedule': crontab(minute='*/5'), # Sweep the Outbox every 5 minutes
     },
 }

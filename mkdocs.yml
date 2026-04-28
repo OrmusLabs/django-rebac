@@ -1,11 +1,151 @@
 site_name: Django ReBAC
-site_url: https://ormuslabs.github.io/django-rebac/
-site_description: A declarative, strictly-typed ReBAC framework for Django.
+site_description: Enterprise ReBAC integration for Django.
+site_author: "Sadegh Yazdani"
+site_url: https://django-rebac.readthedocs.io
+repo_url: https://github.com/OrmusLabs/django-rebac
+repo_name: "aerosadegh/django-rebac"
+edit_uri: edit/main/docs/
 
 theme:
   name: material
+  font:
+    text: Roboto
+    code: Roboto Mono
   palette:
-    primary: indigo
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: teal
+      accent: deep purple
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: teal
+      accent: deep purple
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.footer
+    # Navigation upgrades
+    - navigation.tabs
+    - navigation.tabs.sticky # Keeps top tabs visible when scrolling down
+    - navigation.sections
+    - navigation.expand
+    - navigation.top # Adds a slick "Back to top" button
+    - navigation.indexes # Allows sections to have their own clickable index pages
+    - toc.follow # The right-hand Table of Contents highlights as you scroll
+
+    # Search upgrades
+    - search.suggest # Auto-suggests while typing in the search bar
+    - search.highlight # Highlights the search terms on the page
+    - search.share
+
+    # Code block upgrades
+    - content.code.copy # Copy button
+    - content.code.annotate # Allows you to add beautiful inline annotations to code!
+    - content.tabs.link # If you click a "Python" tab on one code block, it switches all code blocks to Python
+
+  icon:
+    repo: fontawesome/brands/github
+    edit: material/pencil
+    view: material/eye
+    previous: fontawesome/solid/angle-left
+    next: fontawesome/solid/angle-right
+
 
 nav:
   - Home: index.md
+
+  - Core Concepts:
+    - Architecture & Philosophy: architecture/philosophy.md
+    - The Zanzibar Model: getting-started/zanzibar-model.md
+    - Authorization Flow: getting-started/authz-flow.md
+
+  - "Getting Started":
+    - Installation: getting-started/installation.md
+    - Traefik Setup: getting-started/docker-traefik.md
+
+  - "Guides: Schema & Data Modeling":
+    - Roles vs. Permissions: schema/design-guide.md
+    - When to Use Local DB Fields: schema/local-db-fields.md
+
+  - "Guides: Implementation":
+    - Syncing Django Models: examples/models.md
+    - Assigning Dynamic Roles: schema/role-assignments.md
+    - Securing API Views: examples/views.md
+    - Frontend & Serializers: examples/frontend-integration.md
+    - Stateless Dashboards: examples/stateless-views.md
+    - Nested Hierarchies (Trees): examples/advanced-trees.md
+    - Model Property Fallback: examples/advanced_creation.md
+
+  - API Reference:
+    - Configuration (Structs): api/configs.md
+    - Mixins: api/mixins.md
+    - Permissions: api/permissions.md
+    - Settings & Utils: api/settings.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/aerosadegh/django-rebac
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/django-rebac/
+  version:
+    provider: mike
+  copyright: Copyright © 2026 Sadegh Yazdani. Licensed under GPL-3.
+
+
+
+plugins:
+  - search:
+      separator: '[\s-,:!=\[\]()"/]+|(?!\b)(?=[A-Z][a-z])|\.(?!\d)|&[lg]t;'
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            docstring_style: google
+            show_source: true
+            show_root_heading: true
+            show_root_full_path: false
+            show_signature_annotations: true
+            separate_signature: true
+            merge_init_into_class: true
+            show_if_no_docstring: false
+            inherited_members: true
+            members_order: source
+            group_by_category: true
+            show_category_heading: true
+  - mike
+
+
+markdown_extensions:
+  # 🤠 The magic formatting tools!
+  - admonition # Enables callout blocks (!!! info, !!! warning, !!! danger)
+  - attr_list
+  - footnotes
+  - md_in_html
+  - tables
+  - pymdownx.details # Allows you to make admonitions collapsible (??? info)
+  - pymdownx.superfences
+  - pymdownx.tabbed: # Enables tabbed content inside your markdown pages
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tasklist: # Renders beautiful checklist boxes
+      custom_checkbox: true
+  - pymdownx.magiclink # Auto-formats URLs into clickable links
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.emoji: # Ensures your 🤠 and other emojis render perfectly via SVG
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
