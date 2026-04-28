@@ -3,9 +3,9 @@ from rest_framework import generics
 from rest_framework.exceptions import APIException
 from rest_framework.request import Request
 
-from rebac.views.mixins import RebacViewMixin
 from rebac.permissions import IsRebacAuthorized
 from rebac.structs import RebacViewConfig
+from rebac.views.mixins import RebacViewMixin
 from tests.models import MockFolder
 
 pytestmark = pytest.mark.django_db
@@ -88,7 +88,7 @@ class TestAuthorizationParity:
 
         # Verify exact same network payload was sent
         mock_rebac_client.check.assert_called_once()
-        
+
         # Extract kwargs and assert dictionary keys
         called_kwargs = mock_rebac_client.check.call_args.kwargs
         assert called_kwargs["user"] == "user:bob"

@@ -113,7 +113,8 @@ class OpenFGABackend(BaseReBACBackend):
             return []
         except Exception as e:
             logger.error(f"ReBAC ListObjects network error: {e}")
-            # Depending on how strict you want to be, you can return [] or raise RebacConnectionError here
+            # Depending on how strict you want to be, you can return [] or raise
+            # RebacConnectionError here
             raise RebacConnectionError(f"ReBAC network error: {e}") from e
 
         # OpenFGA returns "document:123". We strictly return "123" for the ORM.

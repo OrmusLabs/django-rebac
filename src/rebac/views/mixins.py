@@ -1,6 +1,5 @@
 # rebac/views/mixins.py
 import logging
-import uuid
 from typing import Any, ClassVar
 
 from django.core.exceptions import ImproperlyConfigured

@@ -40,7 +40,7 @@ DEFAULTS: dict[str, Any] = {
 Attributes:
     BACKEND (str): The dot-path to the ReBAC engine adapter.
         Defaults to `django_rebac.backends.openfga.client.OpenFGABackend`.
-    BACKEND_OPTIONS (dict[str, Any]): Backend-specific configuration 
+    BACKEND_OPTIONS (dict[str, Any]): Backend-specific configuration
         (e.g., API URLs, Store IDs, or Pre-shared Keys).
     BATCH_SIZE (int): Number of items to process in a single synchronization batch.
          Defaults to `50`.

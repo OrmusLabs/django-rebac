@@ -4,7 +4,6 @@ from typing import ClassVar
 
 import pytest
 from django.core.exceptions import ImproperlyConfigured
-from openfga_sdk.exceptions import ValidationException
 from rest_framework import generics
 from rest_framework.exceptions import AuthenticationFailed, PermissionDenied
 

@@ -1,4 +1,3 @@
-__all__ = [
-    "BaseReBACBackend"
-]
+__all__ = ["BaseReBACBackend"]
+
 from .client import BaseReBACBackend
