@@ -8,6 +8,7 @@ from openfga_sdk.exceptions import ValidationException
 from rest_framework import generics
 from rest_framework.exceptions import AuthenticationFailed, PermissionDenied
 
+from rebac.backends.base.exceptions import RebacConnectionError
 from rebac.models import RebacSyncOutbox
 from rebac.permissions import IsRebacAuthorized
 from rebac.structs import RebacViewConfig
@@ -72,6 +73,22 @@ class TestViewsAndMixins:
 
         assert qs.count() == 1
         assert qs.first().id == folder1.id
+        assert not qs.filter(id=folder2.id).exists()
+
+    def test_RebacViewMixin_get_config_viewset_success(self, api_rf):
+        """Verifies that action_relations are allowed if the view is a ViewSet."""
+        from rest_framework.viewsets import ViewSetMixin
+
+        class ValidViewSet(RebacViewMixin, ViewSetMixin, generics.GenericAPIView):
+            rebac_config = RebacViewConfig(
+                object_type="folder", action_relations={"custom": "can_custom"}
+            )
+
+        view = ValidViewSet()
+        config = view._get_config()
+
+        # Mathematical Proof: The config was returned and not blocked
+        assert config.action_relations["custom"] == "can_custom"
 
     def test_RebacViewMixin_list_filtering(self, api_rf, mock_rebac_client):
         """Verifies the RebacViewMixin Hook 1 (List Filtering)."""
@@ -337,10 +354,12 @@ class TestViewsAndMixins:
         view.request.rebac_user = "user:bob"
         view.kwargs = {}
 
-        mock_rebac_client.list_objects.side_effect = Exception("Network Down")
+        mock_rebac_client.list_objects.side_effect = RebacConnectionError("Network Down")
 
         # Match the new generic error prefix from your mixin
-        with pytest.raises(ImproperlyConfigured, match="ReBAC ListObjects validation failed"):
+        with pytest.raises(
+            ImproperlyConfigured, match="ReBAC backend validation failed: Network Down"
+        ):
             view.get_queryset()
 
     def test_RebacViewMixin_parent_check_validation_error(self, api_rf, mock_rebac_client):
@@ -351,10 +370,12 @@ class TestViewsAndMixins:
         drf_request.rebac_user = "user:bob"
         view.request = drf_request
 
-        mock_rebac_client.check.side_effect = Exception("Network Down")
+        mock_rebac_client.check.side_effect = RebacConnectionError("Network Down")
 
         # Match the new generic error prefix
-        with pytest.raises(ImproperlyConfigured, match="ReBAC configuration or execution error"):
+        with pytest.raises(
+            ImproperlyConfigured, match="ReBAC backend execution error: Network Down"
+        ):
             view.check_permissions(drf_request)
 
     def test_RebacViewMixin_object_check_validation_error(self, api_rf, mock_rebac_client):
@@ -367,10 +388,12 @@ class TestViewsAndMixins:
         view.request = request
         view.kwargs = {"pk": folder.id}
 
-        mock_rebac_client.check.side_effect = Exception("Network Down")
+        mock_rebac_client.check.side_effect = RebacConnectionError("Network Down")
 
         # Match the new generic error prefix
-        with pytest.raises(ImproperlyConfigured, match="ReBAC configuration or execution error"):
+        with pytest.raises(
+            ImproperlyConfigured, match="ReBAC backend execution error: Network Down"
+        ):
             view.check_object_permissions(request, folder)
 
     def test_RebacViewMixin_post_creation_model_property_fallback(self, api_rf, mock_rebac_client):
@@ -495,3 +518,117 @@ class TestViewsAndMixins:
 
         called_kwargs = mock_rebac_client.check.call_args.kwargs
         assert called_kwargs["obj"] == "organization:acme_123"
+
+    def test_RebacViewMixin_post_creation_fallback_get_queryset_callable(
+        self, api_rf, mock_rebac_client
+    ):
+        """Verifies the mixin falls back to get_queryset() to find the model class."""
+
+        class MockCompanyModel:
+            @property
+            def platform_id(self):
+                return "callable_platform_id"
+
+        class MockQuerySet:
+            model = MockCompanyModel
+
+        class CallableQSView(RebacViewMixin, generics.GenericAPIView):
+            # 🤠 Notice: No 'queryset' attribute defined here!
+            def get_queryset(self):
+                return MockQuerySet()
+
+        view = CallableQSView()
+        view.rebac_config = RebacViewConfig(
+            object_type="company",
+            create_scope_type="platform",
+            create_scope_field="platform_id",
+            create_relation="can_create",
+        )
+
+        wsgi_request = api_rf.post("/dummy/", {}, format="json")
+        drf_request = view.initialize_request(wsgi_request)
+        drf_request.rebac_user = "user:bob"
+        view.request = drf_request
+
+        mock_rebac_client.check.return_value = True
+        view.check_permissions(drf_request)
+
+        # Proof it resolved the ID via the get_queryset() fallback
+        called_kwargs = mock_rebac_client.check.call_args.kwargs
+        assert called_kwargs["obj"] == "platform:callable_platform_id"
+
+    def test_RebacViewMixin_check_permissions_no_lookups_exits(self, api_rf, mocker):
+        """Verifies check_permissions exits cleanly if no stateless lookups are configured."""
+        view = DummyRebacViewMixin()
+        view.rebac_config = RebacViewConfig(object_type="folder", read_relation="can_read")
+
+        request = api_rf.get("/dummy/")
+        drf_request = view.initialize_request(request)
+        drf_request.rebac_user = "user:bob"
+        view.request = drf_request
+
+        # Mock check_object_permissions to ensure it is NOT called
+        mock_check = mocker.patch.object(view, "check_object_permissions")
+
+        view.check_permissions(drf_request)
+        mock_check.assert_not_called()
+
+    def test_RebacViewMixin_check_object_permissions_unmapped_method_bypasses(self, api_rf, mocker):
+        """Verifies unmapped HTTP methods bypass ReBAC object checks safely."""
+        view = DummyRebacViewMixin()
+        view.rebac_config = RebacViewConfig(object_type="folder", update_relation="can_update")
+
+        # 🤠 Use an HTTP method not mapped in the mixin (like TRACE or POST for an object endpoint)
+        request = api_rf.post("/dummy/1/")
+        drf_request = view.initialize_request(request)
+        drf_request.rebac_user = "user:bob"
+        view.request = drf_request
+
+        mock_client = mocker.patch("rebac.views.mixins.get_rebac_client")
+
+        # Relation will remain None, so it should bypass FGA completely
+        view.check_object_permissions(drf_request, MockFolder(id=1))
+        mock_client.assert_not_called()
+
+    def test_RebacViewMixin_check_object_permissions_url_kwarg(self, api_rf, mock_rebac_client):
+        """Verifies object ID resolution specifically via lookup_url_kwarg."""
+        view = DummyRebacViewMixin()
+        view.rebac_config = RebacViewConfig(
+            object_type="folder", read_relation="can_read", lookup_url_kwarg="folder_id"
+        )
+        view.kwargs = {"folder_id": "999"}
+
+        request = api_rf.get("/dummy/999/")
+        drf_request = view.initialize_request(request)
+        drf_request.rebac_user = "user:bob"
+        view.request = drf_request
+
+        mock_rebac_client.check.return_value = True
+
+        # Pass obj=None to force it to use the kwarg
+        view.check_object_permissions(drf_request, obj=None)
+
+        called_kwargs = mock_rebac_client.check.call_args.kwargs
+        assert called_kwargs["obj"] == "folder:999"
+
+    def test_RebacViewMixin_check_object_permissions_fallback_pk(self, api_rf, mock_rebac_client):
+        """Verifies object ID resolution specifically via the obj.pk fallback."""
+        view = DummyRebacViewMixin()
+        view.rebac_config = RebacViewConfig(object_type="folder", read_relation="can_read")
+        view.kwargs = {}
+
+        request = api_rf.get("/dummy/1/")
+        drf_request = view.initialize_request(request)
+        drf_request.rebac_user = "user:bob"
+        view.request = drf_request
+
+        class DummyObj:
+            pk = "777"
+
+        mock_rebac_client.check.return_value = True
+
+        # Pass the object so it triggers the `else: getattr(obj, 'pk')`
+        view.check_object_permissions(drf_request, obj=DummyObj())
+
+        called_kwargs = mock_rebac_client.check.call_args.kwargs
+        assert called_kwargs["obj"] == "folder:777"

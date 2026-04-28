@@ -14,6 +14,7 @@ from openfga_sdk.exceptions import ValidationException
 from openfga_sdk.sync import OpenFgaClient
 
 from rebac.backends.base.client import BaseReBACBackend
+from rebac.backends.base.exceptions import RebacConnectionError, RebacSchemaError
 
 from .exceptions import OpenFGAConfigurationError
 
@@ -73,14 +74,16 @@ class OpenFGABackend(BaseReBACBackend):
             return bool(response.allowed)
         except ValidationException as e:
             error_msg = (
-                f"OpenFGA Schema Mismatch: The relation '{relation}' does not exist "
+                f"ReBAC Schema Mismatch: The relation '{relation}' does not exist "
                 f"on the target object type in your authorization model."
             )
             logger.error(error_msg)
-            raise OpenFGAConfigurationError(error_msg) from e
+            # Raise the Abstract Exception
+            raise RebacSchemaError(error_msg) from e
         except Exception as e:
-            logger.error(f"OpenFGA network or execution error during check: {e}")
-            return False
+            logger.error(f"ReBAC network or execution error during check: {e}")
+            # Raise the Abstract Exception
+            raise RebacConnectionError(f"ReBAC network error: {e}") from e
 
     def list_objects(self, user: str, relation: str, object_type: str) -> list[str]:
         """Returns a list of object IDs the user has the specified relation to.
@@ -106,11 +109,12 @@ class OpenFGABackend(BaseReBACBackend):
                 )
             )
         except ValidationException as e:
-            logger.error(f"OpenFGA ListObjects Schema Mismatch: {e}")
+            logger.error(f"ReBAC ListObjects Schema Mismatch: {e}")
             return []
         except Exception as e:
-            logger.error(f"OpenFGA ListObjects network error: {e}")
-            return []
+            logger.error(f"ReBAC ListObjects network error: {e}")
+            # Depending on how strict you want to be, you can return [] or raise RebacConnectionError here
+            raise RebacConnectionError(f"ReBAC network error: {e}") from e
 
         # OpenFGA returns "document:123". We strictly return "123" for the ORM.
         prefix = f"{object_type}:"

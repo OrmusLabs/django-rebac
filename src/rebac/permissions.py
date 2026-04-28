@@ -7,6 +7,8 @@ from rest_framework.request import Request
 from rest_framework.views import APIView
 from rest_framework.viewsets import ViewSetMixin
 
+from rebac.backends.base.exceptions import RebacError
+
 from .conf import get_setting
 from .loggers import RebacConsoleLogger
 from .structs import RebacViewConfig
@@ -133,16 +135,8 @@ class IsRebacAuthorized(permissions.BasePermission):
                     obj=f"{config.create_scope_type}:{parent_id}",
                 )
                 return is_allowed
-            # except ValidationException as e:
-            #     error_msg = (
-            #         f"ReBAC DSL Mismatch: The relation '{config.create_relation}' on type "
-            #         f"'{config.create_scope_type}' does not exist in your OpenFGA schema. "
-            #         f"Please update your DSL or fix your RebacViewConfig."
-            #     )
-            #     dev_logger.error(error_msg)
-            #     raise ImproperlyConfigured(error_msg) from e
-            except Exception as e:
-                logger.error(f"ReBAC network or validation error during parent check: {e}")
+            except RebacError as e:
+                logger.error(f"ReBAC backend error during parent check: {e}")
                 return False
 
         if config.lookup_header or config.lookup_url_kwarg:
@@ -222,15 +216,14 @@ class IsRebacAuthorized(permissions.BasePermission):
 
             rebac_client = get_rebac_client()
             try:
-                # Pass raw kwargs!
                 is_allowed = rebac_client.check(
                     user=rebac_user,
                     relation=required_relation,
                     obj=f"{config.object_type}:{object_id}",
                 )
                 return is_allowed
-            except Exception as e:
-                logger.error(f"ReBAC network or validation error during object check: {e}")
+            except RebacError as e:
+                logger.error(f"ReBAC backend error during object check: {e}")
                 return False
         # except ValidationException as e:
         #     error_msg = (

@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 import pytest
 from rest_framework import serializers
 
+from rebac.backends.base.exceptions import RebacConnectionError
 from rebac.serializers import RebacPermissionSerializerMixin
 from tests.models import MockFolder
 
@@ -31,7 +32,7 @@ class DummyFolderSerializer(RebacPermissionSerializerMixin, serializers.ModelSer
 # ==========================================
 # 🧪 SERIALIZER TEST SUITE
 # ==========================================
-class TestFGASerializers:
+class TestRebacSerializers:
     def _create_mock_batch_response(self, results_map: list[dict]):
         """
         Helper to simulate the complex BatchCheckResponse from the OpenFGA SDK.
@@ -69,13 +70,10 @@ class TestFGASerializers:
         request = api_rf.get("/dummy/1/")
         request.rebac_user = "user:bob"
 
-        # Simulate FGA Network Response: Bob can read, but cannot edit
-        mock_rebac_client.batch_check.return_value = self._create_mock_batch_response(
-            [
-                {"object": f"folder:{folder.id}", "relation": "can_read", "allowed": True},
-                {"object": f"folder:{folder.id}", "relation": "can_edit", "allowed": False},
-            ]
-        )
+        # Return the simple dictionary our abstract interface dictates
+        mock_rebac_client.batch_check.return_value = {
+            f"folder:{folder.id}": {"can_read": True, "can_edit": False}
+        }
 
         serializer = DummyFolderSerializer(folder, context={"request": request})
         data = serializer.data
@@ -102,16 +100,20 @@ class TestFGASerializers:
         request.rebac_user = "user:bob"
 
         # Simulate FGA Network Response for Multiple Objects!
-        mock_rebac_client.batch_check.return_value = self._create_mock_batch_response(
-            [
-                # Bob can do everything on f1
-                {"object": f"folder:{f1.id}", "relation": "can_read", "allowed": True},
-                {"object": f"folder:{f1.id}", "relation": "can_edit", "allowed": True},
-                # Bob can only read f2
-                {"object": f"folder:{f2.id}", "relation": "can_read", "allowed": True},
-                {"object": f"folder:{f2.id}", "relation": "can_edit", "allowed": False},
-            ]
-        )
+        mock_rebac_client.batch_check.return_value = {
+            f"folder:{f1.id}": {"can_read": True, "can_edit": True},
+            f"folder:{f2.id}": {"can_read": True, "can_edit": False},
+        }
+        # mock_rebac_client.batch_check.return_value = self._create_mock_batch_response(
+        #     [
+        #         # Bob can do everything on f1
+        #         {"object": f"folder:{f1.id}", "relation": "can_read", "allowed": True},
+        #         {"object": f"folder:{f1.id}", "relation": "can_edit", "allowed": True},
+        #         # Bob can only read f2
+        #         {"object": f"folder:{f2.id}", "relation": "can_read", "allowed": True},
+        #         {"object": f"folder:{f2.id}", "relation": "can_edit", "allowed": False},
+        #     ]
+        # )
 
         # Execute with many=True
         serializer = DummyFolderSerializer([f1, f2], many=True, context={"request": request})
@@ -149,7 +151,7 @@ class TestFGASerializers:
         request.rebac_user = "user:bob"
 
         # Force an SDK failure
-        mock_rebac_client.batch_check.side_effect = TimeoutError("FGA is down")
+        mock_rebac_client.batch_check.side_effect = RebacConnectionError("FGA is down")
 
         serializer = DummyFolderSerializer(folder, context={"request": request})
         data = serializer.data
@@ -157,3 +159,19 @@ class TestFGASerializers:
         # The view should still render the JSON, just with buttons disabled
         assert data["_permissions"]["can_read"] is False
         assert data["name"] == "Doc"
+
+    def test_list_view_network_failure_fails_gracefully(self, api_rf, mock_rebac_client):
+        """Verifies list view network timeouts do not crash the batcher."""
+        f1 = MockFolder.objects.create(name="Public", org_id="o1", creator_id="u1")
+        f2 = MockFolder.objects.create(name="Private", org_id="o1", creator_id="u1")
+
+        request = api_rf.get("/dummy/")
+        request.rebac_user = "user:bob"
+
+        mock_rebac_client.batch_check.side_effect = RebacConnectionError("FGA is down")
+
+        serializer = DummyFolderSerializer([f1, f2], many=True, context={"request": request})
+        data = serializer.data
+
+        assert data[0]["_permissions"]["can_read"] is False
+        assert data[1]["_permissions"]["can_read"] is False

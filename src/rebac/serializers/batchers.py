@@ -1,6 +1,7 @@
 # rebac/batchers.py
 from rest_framework import serializers
 
+from ..backends.base.exceptions import RebacError
 from ..conf import get_setting
 from ..loggers import RebacConsoleLogger
 from ..utils import get_rebac_client
@@ -10,7 +11,7 @@ logger = RebacConsoleLogger(__name__)
 
 class RebacBatchListSerializer(serializers.ListSerializer):
     """
-    Intercepts list serialization to perform a single OpenFGA BatchCheck.
+    Intercepts list serialization to perform a single ReBAC batch check.
     Prevents N+1 network requests during collection views.
     """
 
@@ -44,6 +45,10 @@ class RebacBatchListSerializer(serializers.ListSerializer):
 
         # Execute via the abstract interface
         rebac_client = get_rebac_client()
-        self.context["rebac_permissions_map"] = rebac_client.batch_check(checks)
+        try:
+            self.context["rebac_permissions_map"] = rebac_client.batch_check(checks)
+        except RebacError as e:
+            logger.error(f"ReBAC batch list check failed: {e}")
+            self.context["rebac_permissions_map"] = {}
 
         return super().to_representation(data)

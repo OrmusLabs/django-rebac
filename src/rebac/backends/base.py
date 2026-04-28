@@ -2,7 +2,7 @@
 from abc import ABC, abstractmethod
 
 
-class BaseReBACBackend(ABC):
+class BaseReBACBackend(ABC): # pragma: no cover
     """Abstract base class defining the contract for all ReBAC backend adapters."""
 
     def __init__(self, **options: str) -> None:

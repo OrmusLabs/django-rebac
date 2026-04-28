@@ -2,7 +2,7 @@
 from abc import ABC, abstractmethod
 
 
-class BaseReBACBackend(ABC):
+class BaseReBACBackend(ABC): # pragma: no cover
     """Abstract base class defining the contract for all ReBAC backend adapters."""
 
     def __init__(self, **options: str) -> None:
@@ -33,6 +33,26 @@ class BaseReBACBackend(ABC):
 
         Raises:
             ConnectionError: If the backend service is unreachable.
+        """
+        pass
+
+    @abstractmethod
+    def write_tuples(self, tuples: list[dict[str, str]]) -> None:
+        """Writes relationships to the ReBAC store.
+
+        Implementations MUST ensure this operation is idempotent. If a tuple
+        already exists, the backend should safely ignore it or overwrite it
+        without raising an exception.
+        """
+        pass
+
+    @abstractmethod
+    def delete_tuples(self, tuples: list[dict[str, str]]) -> None:
+        """Deletes relationships from the ReBAC store.
+
+        Implementations MUST ensure this operation is idempotent. If a tuple
+        does not exist, the backend should safely ignore it without raising
+        an exception.
         """
         pass
 

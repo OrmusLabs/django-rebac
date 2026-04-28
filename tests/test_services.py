@@ -6,12 +6,12 @@ import pytest
 from rebac.models import RebacSyncOutbox
 from rebac.services import RebacTupleIngestionService
 
-# 🤠 CRITICAL: transaction=True is required for testing transaction.on_commit() hooks!
+# transaction=True is required for testing transaction.on_commit() hooks!
 # Without this, pytest rolls back the database before the commit hook ever fires.
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
-class TestFGATupleIngestionService:
+class TestRebacTupleIngestionService:
     @patch("rebac.services.process_rebac_outbox_batch.delay")
     def test_queue_tuple_creates_record_and_triggers_task(self, mock_delay):
         """

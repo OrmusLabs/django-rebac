@@ -8,6 +8,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.viewsets import ViewSetMixin
 
+from rebac.backends.base.exceptions import RebacConnectionError, RebacSchemaError
 from rebac.permissions import IsRebacAuthorized
 from rebac.structs import RebacViewConfig
 
@@ -138,7 +139,7 @@ class TestIsRebacAuthorized:
         request = api_rf.post("/dummy/", {"org_id": "org_777"}, format="json")
         request.rebac_user = "user:bob"
 
-        mock_rebac_client.check.side_effect = TimeoutError("FGA Server Unreachable")
+        mock_rebac_client.check.side_effect = RebacConnectionError("FGA Server Unreachable")
 
         response = view(request)
         assert response.status_code == 403
@@ -342,7 +343,7 @@ class TestIsRebacAuthorized:
         drf_request.rebac_user = "user:bob"
 
         # Agnostic exceptions cause the permission to fail closed (Return False)
-        mock_rebac_client.check.side_effect = Exception("Backend down or invalid schema")
+        mock_rebac_client.check.side_effect = RebacSchemaError("Backend down or invalid schema")
         assert IsRebacAuthorized().has_permission(drf_request, view) is False
 
     def test_permission_object_check_validation_error(self, api_rf, mock_rebac_client):

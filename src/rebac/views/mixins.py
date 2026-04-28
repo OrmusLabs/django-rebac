@@ -1,4 +1,4 @@
-# rebac/mixins.py
+# rebac/views/mixins.py
 import logging
 import uuid
 from typing import Any, ClassVar
@@ -7,6 +7,8 @@ from django.core.exceptions import ImproperlyConfigured
 from rest_framework.exceptions import AuthenticationFailed, PermissionDenied
 from rest_framework.request import Request
 from rest_framework.viewsets import ViewSetMixin
+
+from rebac.backends.base.exceptions import RebacError
 
 from ..conf import get_setting
 from ..loggers import RebacConsoleLogger
@@ -23,7 +25,7 @@ dev_logger = RebacConsoleLogger(__name__)
 
 
 class RebacViewMixin:
-    """Structure-agnostic mixin for DRF Views to enforce OpenFGA Authorization.
+    """Structure-agnostic mixin for DRF Views to enforce ReBAC Authorization.
 
     This mixin automatically handles three critical authorization lifecycle hooks
     in Django REST Framework without requiring manual permission logic:
@@ -146,8 +148,8 @@ class RebacViewMixin:
                     relation=relation_to_check,
                     object_type=config.object_type,
                 )
-            except Exception as e:
-                error_msg = f"ReBAC ListObjects validation failed: {e}"
+            except RebacError as e:
+                error_msg = f"ReBAC backend validation failed: {e}"
                 logger.error(error_msg)
                 raise ImproperlyConfigured(error_msg) from e
 
@@ -195,8 +197,8 @@ class RebacViewMixin:
                     relation=config.create_relation,
                     obj=f"{config.create_scope_type}:{parent_id}",
                 )
-            except Exception as e:
-                error_msg = f"ReBAC configuration or execution error: {e}"
+            except RebacError as e:
+                error_msg = f"ReBAC backend execution error: {e}"
                 logger.error(error_msg)
                 raise ImproperlyConfigured(error_msg) from e
 
@@ -248,8 +250,8 @@ class RebacViewMixin:
                     relation=relation,
                     obj=f"{config.object_type}:{object_id}",
                 )
-            except Exception as e:
-                error_msg = f"ReBAC configuration or execution error: {e}"
+            except RebacError as e:
+                error_msg = f"ReBAC backend execution error: {e}"
                 logger.error(error_msg)
                 raise ImproperlyConfigured(error_msg) from e
 

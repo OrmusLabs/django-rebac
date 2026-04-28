@@ -1,6 +1,7 @@
 # rebac/serializers.py
 from rest_framework import serializers
 
+from ..backends.base.exceptions import RebacError
 from ..conf import get_setting
 from ..loggers import RebacConsoleLogger
 from ..utils import get_rebac_client
@@ -11,7 +12,7 @@ logger = RebacConsoleLogger(__name__)
 class RebacPermissionSerializerMixin(serializers.Serializer):
     """
     Package mixin for DRF Serializers.
-    Reads from the OpenFGA batch map for lists, or runs a mini-batch for details.
+    Reads from the ReBAC batch map for lists, or runs a mini-batch for details.
     """
 
     _permissions = serializers.SerializerMethodField()
@@ -67,7 +68,11 @@ class RebacPermissionSerializerMixin(serializers.Serializer):
         ]
 
         rebac_client = get_rebac_client()
-        results_map = rebac_client.batch_check(checks)
+        try:
+            results_map = rebac_client.batch_check(checks)
+        except RebacError as e:
+            logger.error(f"ReBAC batch check failed: {e}")
+            results_map = {}
 
         # Safe extraction from the map
         return results_map.get(object_key, {perm: False for perm in rebac_permissions})

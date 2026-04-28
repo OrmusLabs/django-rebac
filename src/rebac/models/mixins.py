@@ -21,10 +21,11 @@ dev_logger = RebacConsoleLogger(__name__)
 
 
 class RebacModelSyncMixin:
-    """Structure-agnostic mixin for synchronizing Django models to OpenFGA via the Outbox pattern.
+    """Structure-agnostic mixin for synchronizing Django models to the ReBAC store via
+        the Outbox pattern.
 
     This mixin intercepts the standard Django `save()` and `delete()` lifecycles.
-    It utilizes the defined `RebacModelConfig` to calculate the exact OpenFGA tuple
+    It utilizes the defined `RebacModelConfig` to calculate the exact ReBAC tuple
     differences (diffs) and safely queues them in the local database transaction.
 
     Attributes:
