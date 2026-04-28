@@ -12,7 +12,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 
 class TestRebacTupleIngestionService:
-    @patch("rebac.services.process_rebac_outbox_batch.delay")
+    @patch("rebac.tasks.process_rebac_outbox_batch.delay")
     def test_queue_tuple_creates_record_and_triggers_task(self, mock_delay):
         """
         Verifies that consuming an external event safely writes to the Outbox
