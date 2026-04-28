@@ -2,8 +2,8 @@
 from rest_framework import serializers
 
 from ..backends.base.exceptions import RebacError
+from ..common.loggers import RebacConsoleLogger
 from ..conf import get_setting
-from ..loggers import RebacConsoleLogger
 from ..utils import get_rebac_client
 
 logger = RebacConsoleLogger(__name__)

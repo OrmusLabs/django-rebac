@@ -25,7 +25,7 @@ The `RebacViewConfig` dataclass centralizes all ReBAC authorization rules for yo
 !!! tip "The Golden Rule: Check Permissions, Not Roles"
     When configuring a view, you must only check **Permissions** (e.g., `can_read_document`, `can_update`). You should never check roles directly.
 
-::: rebac.structs.RebacViewConfig
+::: rebac.core.structs.RebacViewConfig
     options:
       show_root_heading: false
       heading_level: 4
@@ -41,21 +41,21 @@ The `RebacModelConfig` dataclass acts as a translation layer. It reads soft-refe
 !!! tip "The Golden Rule: Assign Roles, Not Permissions"
     When configuring a model's `creators` or `parents`, you must only assign base **Roles** (e.g., `owner`, `editor`). Models should never directly grant atomic permissions.
 
-::: rebac.structs.RebacModelConfig
+::: rebac.core.structs.RebacModelConfig
     options:
       show_root_heading: false
       heading_level: 4
       filters:
         - "!^__post_init__$"
 
-::: rebac.structs.RebacParentConfig
+::: rebac.core.structs.RebacParentConfig
     options:
       show_root_heading: false
       heading_level: 4
       filters:
         - "!^__post_init__$"
 
-::: rebac.structs.RebacCreatorConfig
+::: rebac.core.structs.RebacCreatorConfig
     options:
       show_root_heading: false
       heading_level: 4

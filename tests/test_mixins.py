@@ -3,7 +3,7 @@ import pytest
 from django.core.exceptions import ImproperlyConfigured
 from django.db import models
 
-from rebac.adapters import RebacTupleAdapter
+from rebac.core.adapters import RebacTupleAdapter
 from rebac.models import RebacModelSyncMixin, RebacSyncOutbox
 
 from .models import MockFolder, MockOrganization

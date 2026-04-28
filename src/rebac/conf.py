@@ -5,7 +5,7 @@ from typing import Any
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 
-from rebac.loggers import RebacConsoleLogger
+from .common.loggers import RebacConsoleLogger
 
 dev_logger = RebacConsoleLogger(__name__)
 

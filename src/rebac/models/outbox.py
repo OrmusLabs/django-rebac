@@ -12,7 +12,7 @@ class RebacSyncOutbox(models.Model):
     class Action(models.TextChoices):
         # Database Value, Human Readable Label
         WRITE = "WRT", "🔗 " + _("Write")
-        DELETE = "DEL", "⛓️‍💥 " + _("Delete")
+        DELETE = "DEL", "🔪 " + _("Delete")
 
     action = models.CharField(
         max_length=max(len(c[0]) for c in Action.choices), choices=Action.choices

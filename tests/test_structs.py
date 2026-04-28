@@ -1,7 +1,7 @@
 # tests/test_structs.py
 import pytest
 
-from rebac.structs import (
+from rebac.core.structs import (
     RebacCreatorConfig,
     RebacModelConfig,
     RebacParentConfig,

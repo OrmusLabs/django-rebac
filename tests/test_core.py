@@ -4,7 +4,7 @@ import logging
 import pytest
 from django.core.exceptions import ImproperlyConfigured
 
-from rebac.loggers import RebacConsoleLogger
+from rebac.common.loggers import RebacConsoleLogger
 from rebac.models import RebacSyncOutbox
 from rebac.utils import get_rebac_client
 

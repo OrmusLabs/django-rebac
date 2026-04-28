@@ -6,9 +6,9 @@ from typing import Any, ClassVar
 from django.core.exceptions import ImproperlyConfigured
 from django.db import transaction
 
-from ..adapters import RebacTupleAdapter
-from ..loggers import RebacConsoleLogger
-from ..structs import RebacModelConfig
+from ..common.loggers import RebacConsoleLogger
+from ..core.adapters import RebacTupleAdapter
+from ..core.structs import RebacModelConfig
 from .outbox import RebacSyncOutbox
 
 __all__ = [
@@ -100,7 +100,7 @@ class RebacModelSyncMixin:
                 # 2. Inject your custom, dynamic logic
                 if self.is_public:
                     self._queue_outbox(
-                        action=RebacSyncOutbox.Action.WRITE.value,
+                        action=RebacSyncOutbox.Action.WRITE,
                         t={
                             "user": "user:*",  # OpenFGA wildcard for 'everyone'
                             "relation": "viewer",
@@ -149,17 +149,17 @@ class RebacModelSyncMixin:
 
             if is_new:
                 for t in current_tuples:
-                    self._queue_outbox(RebacSyncOutbox.Action.WRITE, t)
+                    self._queue_outbox(RebacSyncOutbox.Action.WRITE, t)  # type: ignore[arg-type]
             else:
                 to_delete, to_write = RebacTupleAdapter.compute_diffs(
                     self._original_tuples, current_tuples
                 )
 
                 for t in to_delete:
-                    self._queue_outbox(RebacSyncOutbox.Action.DELETE, t)
+                    self._queue_outbox(RebacSyncOutbox.Action.DELETE, t)  # type: ignore[arg-type]
 
                 for t in to_write:
-                    self._queue_outbox(RebacSyncOutbox.Action.WRITE, t)
+                    self._queue_outbox(RebacSyncOutbox.Action.WRITE, t)  # type: ignore[arg-type]
 
             self._original_tuples = current_tuples
 
@@ -170,19 +170,21 @@ class RebacModelSyncMixin:
                     f"'{self.__class__.__name__}' must define a 'rebac_config' attribute."
                 )
             for t in RebacTupleAdapter.generate_tuples(self, self.rebac_config):
-                self._queue_outbox(RebacSyncOutbox.Action.DELETE, t)
+                self._queue_outbox(RebacSyncOutbox.Action.DELETE, t)  # type: ignore[arg-type]
             super().delete(*args, **kwargs)  # type: ignore[misc]
 
-    def _queue_outbox(self, action: str, t: dict[str, str]) -> None:
-        RebacSyncOutbox.objects.create(
+    def _queue_outbox(self, action: str | RebacSyncOutbox.Action, t: dict[str, str]) -> None:
+        """Delegates tuple queueing to the centralized ReBAC service layer."""
+        from ..services import RebacTupleIngestionService
+
+        RebacTupleIngestionService.queue_tuple(
             action=action,
-            user_id=t["user"],
+            user=t["user"],
             relation=t["relation"],
-            object_id=t["object"],
+            rebac_object=t["object"],
+            trigger_worker=False,
         )
 
         if not self._rebac_task_scheduled:
-            from ..tasks import process_rebac_outbox_batch
-
-            transaction.on_commit(lambda: process_rebac_outbox_batch.delay())
+            RebacTupleIngestionService.trigger_sync()
             self._rebac_task_scheduled = True

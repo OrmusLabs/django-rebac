@@ -3,8 +3,8 @@ from rest_framework import generics
 from rest_framework.exceptions import APIException
 from rest_framework.request import Request
 
+from rebac.core.structs import RebacViewConfig
 from rebac.permissions import IsRebacAuthorized
-from rebac.structs import RebacViewConfig
 from rebac.views.mixins import RebacViewMixin
 from tests.models import MockFolder
 

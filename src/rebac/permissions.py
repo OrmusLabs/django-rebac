@@ -7,11 +7,10 @@ from rest_framework.request import Request
 from rest_framework.views import APIView
 from rest_framework.viewsets import ViewSetMixin
 
-from rebac.backends.base.exceptions import RebacError
-
+from .backends.base.exceptions import RebacError
+from .common.loggers import RebacConsoleLogger
 from .conf import get_setting
-from .loggers import RebacConsoleLogger
-from .structs import RebacViewConfig
+from .core.structs import RebacViewConfig
 from .utils import get_rebac_client
 
 logger = logging.getLogger(__name__)

@@ -9,8 +9,8 @@ from rest_framework.views import APIView
 from rest_framework.viewsets import ViewSetMixin
 
 from rebac.backends.base.exceptions import RebacConnectionError, RebacSchemaError
+from rebac.core.structs import RebacViewConfig
 from rebac.permissions import IsRebacAuthorized
-from rebac.structs import RebacViewConfig
 
 from .models import MockFolder
 from .views import FinanceDashboardView

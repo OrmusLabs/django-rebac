@@ -4,8 +4,8 @@ from typing import ClassVar
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from rebac.core.structs import RebacViewConfig
 from rebac.permissions import IsRebacAuthorized
-from rebac.structs import RebacViewConfig
 
 # (Assuming these models exist in your Finance mini-app)
 from .models import Expense, Invoice

@@ -8,9 +8,9 @@ from rest_framework import generics
 from rest_framework.exceptions import AuthenticationFailed, PermissionDenied
 
 from rebac.backends.base.exceptions import RebacConnectionError
+from rebac.core.structs import RebacViewConfig
 from rebac.models import RebacSyncOutbox
 from rebac.permissions import IsRebacAuthorized
-from rebac.structs import RebacViewConfig
 from rebac.views import RebacViewMixin
 from tests.models import MockFolder
 

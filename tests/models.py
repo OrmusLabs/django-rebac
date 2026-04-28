@@ -1,8 +1,8 @@
 # tests/models.py
 from django.db import models
 
+from rebac.core.structs import RebacCreatorConfig, RebacModelConfig, RebacParentConfig
 from rebac.models.mixins import RebacModelSyncMixin
-from rebac.structs import RebacCreatorConfig, RebacModelConfig, RebacParentConfig
 
 
 class MockOrganization(RebacModelSyncMixin, models.Model):
