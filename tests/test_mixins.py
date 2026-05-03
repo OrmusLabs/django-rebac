@@ -6,7 +6,7 @@ from django.db import models
 from rebac.core.adapters import RebacTupleAdapter
 from rebac.models import RebacModelSyncMixin, RebacSyncOutbox
 
-from .models import MockFolder, MockOrganization
+from .models import MockCascadeChild, MockCascadeParent, MockFolder, MockOrganization
 
 # Ensure all tests in this file have database access and are rolled back afterward
 pytestmark = pytest.mark.django_db
@@ -130,3 +130,115 @@ class TestRebacModelSyncMixin:
 
         with pytest.raises(ImproperlyConfigured, match="must define a 'rebac_config' attribute"):
             folder.delete()
+
+
+class TestRebacDeletionMechanisms:
+    """
+    Rigorously verifies the three vectors of Django object deletion to ensure
+    the ReBAC graph remains perfectly synchronized without duplicating Outbox tasks.
+    """
+
+    def test_instance_delete_prevents_duplicate_signals(self) -> None:
+        """
+        Condition 1: Instance `.delete()`
+
+        Verifies that manually calling `folder.delete()` triggers the mixin's
+        instance method, sets the sentinel flag, and PREVENTS the `pre_delete`
+        signal from duplicating the outbox tasks.
+        """
+        # 1. Setup
+        folder = MockFolder.objects.create(name="Docs", org_id="org1", creator_id="user1")
+        RebacSyncOutbox.objects.all().delete()  # Clear the Outbox of creation tasks
+
+        # 2. Action (Fires both the .delete() method AND the pre_delete signal)
+        folder.delete()
+
+        # 3. Assert
+        # MockFolder has 1 parent (organization) and 1 creator (owner).
+        # Therefore, exactly 2 DELETE tasks should exist.
+        # If the signal wasn't blocked by our sentinel flag, there would be 4!
+        tasks = RebacSyncOutbox.objects.filter(action=RebacSyncOutbox.Action.DELETE)
+        assert tasks.count() == 2, "Duplicate tasks were queued! Sentinel flag failed."
+
+    def test_bulk_queryset_delete_caught_by_signal(self) -> None:
+        """
+        Condition 2 & 3: Bulk Deletes & Cascades
+
+        Verifies that when Django's internal Collector bypasses the instance
+        `.delete()` method (which happens natively in both `QuerySet.delete()`
+        and ForeignKey `CASCADE` events), the metaprogrammed `pre_delete` signal
+        successfully traps the event and queues the ReBAC tuples.
+        """
+        # 1. Setup: Create multiple folders
+        MockFolder.objects.create(name="F1", org_id="org1", creator_id="user_A")
+        MockFolder.objects.create(name="F2", org_id="org1", creator_id="user_B")
+        RebacSyncOutbox.objects.all().delete()  # Clear the Outbox of creation tasks
+
+        # 2. Action: Bulk Delete
+        # This translates directly to SQL bulk deletion and bypasses the model methods
+        MockFolder.objects.filter(org_id="org1").delete()
+
+        # 3. Assert
+        # 2 folders * 2 relations each (parent + creator) = 4 DELETE tasks
+        tasks = RebacSyncOutbox.objects.filter(action=RebacSyncOutbox.Action.DELETE)
+        assert tasks.count() == 4, "Signal failed to catch the bulk deletion!"
+
+        # 4. Deep Validation: Ensure the correct ReBAC tuples were generated
+        users_in_tasks = set(tasks.values_list("user_id", flat=True))
+        assert "user:user_A" in users_in_tasks
+        assert "user:user_B" in users_in_tasks
+        assert "organization:org1" in users_in_tasks
+
+    def test_duplicate_signal_execution_safety(self) -> None:
+        """
+        Condition: Signal Idempotency
+
+        Simulates what happens if Django accidentally fires the pre_delete signal
+        twice for the exact same object in memory (e.g., due to a misconfigured
+        third-party app or a forced manual signal broadcast).
+        """
+        # 1. Setup
+        folder = MockFolder.objects.create(name="Docs", org_id="org1", creator_id="user1")
+        RebacSyncOutbox.objects.all().delete()
+
+        # 2. Action: Manually fire the framework's signal handler twice
+        # to simulate a rogue duplicate broadcast
+        MockFolder._rebac_auto_cascade_handler(sender=MockFolder, instance=folder)
+        MockFolder._rebac_auto_cascade_handler(sender=MockFolder, instance=folder)
+
+        # 3. Assert
+        # Even though the handler was hit twice, the `_rebac_is_deleting` flag
+        # ensures the logic only executes once.
+        tasks = RebacSyncOutbox.objects.filter(action=RebacSyncOutbox.Action.DELETE)
+        assert tasks.count() == 2, "Signal handler is not idempotent!"
+
+    def test_true_foreign_key_cascade_caught_by_signal(self) -> None:
+        """
+        Condition 3: True Django ORM Foreign Key CASCADE
+        """
+
+        # 1. Setup: Create a strict hierarchy (Added creator_id)
+        parent = MockCascadeParent.objects.create(name="HQ", creator_id="admin_user")
+        child_1 = MockCascadeChild.objects.create(parent=parent)
+        child_2 = MockCascadeChild.objects.create(parent=parent)
+
+        # ⚠️ THE FIX: Capture the primary keys BEFORE they are wiped by Django
+        parent_pk = parent.pk
+        child_1_pk = child_1.pk
+        child_2_pk = child_2.pk
+
+        # Clear the outbox of the creation tasks
+        RebacSyncOutbox.objects.all().delete()
+
+        # 2. Action: Delete the PARENT
+        parent.delete()
+
+        # 3. Assert: Verify the Outbox caught all 3 deletions
+        tasks = RebacSyncOutbox.objects.filter(action=RebacSyncOutbox.Action.DELETE)
+        assert tasks.count() == 3, "Signal failed to catch the cascading children!"
+
+        # 4. Deep Validation: Ensure exact objects were queued using the CAPTURED keys
+        deleted_objects = set(tasks.values_list("object_id", flat=True))
+        assert f"parent:{parent_pk}" in deleted_objects
+        assert f"child:{child_1_pk}" in deleted_objects
+        assert f"child:{child_2_pk}" in deleted_objects
