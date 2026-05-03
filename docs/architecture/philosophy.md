@@ -15,7 +15,7 @@ We built `django-rebac` to solve these problems by adopting the **Google Zanziba
 To make this decoupling seamless and reliable, the package implements several advanced architectural patterns under the hood.
 
 ### The Transactional Outbox Pattern
-A major challenge in distributed systems is "Dual Writes"—saving data to your local PostgreSQL database and simultaneously sending an HTTP request to an external service (like OpenFGA). If the network fails, your database and the ReBAC engine become out of sync.
+A major challenge in distributed systems is "Dual Writes"—saving data to your local database and simultaneously sending an HTTP request to an external service (like OpenFGA). If the network fails, your database and the ReBAC engine become out of sync.
 
 This package solves this using the **Transactional Outbox Pattern**:
 

@@ -27,7 +27,7 @@ lint-fix:
 
 # 🤠 3. Serve docs (Safely inside the uv venv!)
 docs-serve:
-    uv run mkdocs serve --livereload -a 0.0.0.0:8000 -w .\docs\ -w .\mkdocs.yml -w .\src\
+    uv run mkdocs serve --livereload -a 0.0.0.0:8007 -w .\docs\ -w .\mkdocs.yml -w .\src\
 
 # 🤠 4. Build docs
 docs-build:

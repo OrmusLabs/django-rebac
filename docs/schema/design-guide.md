@@ -1,4 +1,5 @@
-# 🏗️ Designing the ReBAC Schema (DSL for OpenFGA)
+# 🏗️ Designing the ReBAC Schema
+> DSL for OpenFGA
 
 To get the most out of `django-rebac`, your ReBAC schema must follow the **Roles vs. Permissions Pattern**.
 
