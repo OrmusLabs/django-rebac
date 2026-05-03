@@ -5,6 +5,7 @@ from typing import Any, ClassVar
 
 from django.core.exceptions import ImproperlyConfigured
 from django.db import transaction
+from django.db.models.signals import pre_delete
 
 from ..common.loggers import RebacConsoleLogger
 from ..core.adapters import RebacTupleAdapter
@@ -121,31 +122,81 @@ class RebacModelSyncMixin:
     rebac_config: ClassVar[RebacModelConfig | None] = None
     pk: int | str | uuid.UUID | None
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        if self.rebac_config is None:
-            raise ImproperlyConfigured(
-                f"'{self.__class__.__name__}' must define a 'rebac_config' attribute."
+    @classmethod
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        """
+        Metaprogramming Hook: Executed automatically when a Django model inherits
+        from this mixin. Wires up framework-level safety nets.
+        """
+        super().__init_subclass__(**kwargs)
+
+        # Generate a unique dispatch_uid to prevent duplicate signal registration
+        # if the module is reloaded (e.g., during tests or dev server reloads).
+        dispatch_uid = f"{cls.__module__}.{cls.__name__}.rebac_auto_cascade"
+        pre_delete.connect(cls._rebac_auto_cascade_handler, sender=cls, dispatch_uid=dispatch_uid)
+
+    @classmethod
+    def _rebac_auto_cascade_handler(cls, sender: type, instance: Any, **kwargs: Any) -> None:
+        """
+        Framework-level signal handler. Traps deletions that bypass the instance
+        .delete() method (e.g., SQL cascades or Admin bulk deletes).
+        """
+        if not instance.pk or not getattr(instance, "rebac_config", None):  # pragma: no cover
+            return
+
+        # Defensive flag: If standard .delete() was already called, skip to avoid duplicates
+        if getattr(instance, "_rebac_is_deleting", False):
+            return
+
+        instance._rebac_is_deleting = True
+
+        try:
+            config = instance._get_validated_config()
+            tuples_to_delete = RebacTupleAdapter.generate_tuples(instance, config)
+            for t in tuples_to_delete:
+                instance._queue_outbox(RebacSyncOutbox.Action.DELETE, t)
+        except Exception as e:  # pragma: no cover
+            logger.error(
+                "ReBAC framework signal failure for"
+                f" {instance.__class__.__name__} {instance.pk}: {e}"
             )
 
+    def _get_validated_config(self) -> RebacModelConfig:
+        """
+        Safely extracts and validates the RebacModelConfig.
+        Centralizes validation to adhere strictly to DRY principles.
+
+        Returns:
+            RebacModelConfig: The validated configuration object.
+
+        Raises:
+            ImproperlyConfigured: If the configuration is missing or of the wrong type.
+        """
+        if not isinstance(self.rebac_config, RebacModelConfig):
+            raise ImproperlyConfigured(
+                f"'{self.__class__.__name__}' must define a 'rebac_config' attribute "
+                f"of type 'RebacModelConfig'."
+            )
+        return self.rebac_config
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+
+        # Fail fast on instantiation if misconfigured
+        config = self._get_validated_config()
+
         # Delegate tuple generation to the adapter
-        self._original_tuples = (
-            RebacTupleAdapter.generate_tuples(self, self.rebac_config) if self.pk else []
-        )
+        self._original_tuples = RebacTupleAdapter.generate_tuples(self, config) if self.pk else []
         self._rebac_task_scheduled = False
 
     def save(self, *args: Any, **kwargs: Any) -> None:
-        is_new = self._state.adding  # type: ignore[attr-defined]
+        is_new = bool(self._state.adding)  # type: ignore[attr-defined]
 
         with transaction.atomic():
             super().save(*args, **kwargs)  # type: ignore[misc]
 
-            if self.rebac_config is None:
-                raise ImproperlyConfigured(
-                    f"'{self.__class__.__name__}' must define a 'rebac_config' attribute."
-                )
-
-            current_tuples = RebacTupleAdapter.generate_tuples(self, self.rebac_config)
+            config = self._get_validated_config()
+            current_tuples = RebacTupleAdapter.generate_tuples(self, config)
 
             if is_new:
                 for t in current_tuples:
@@ -164,13 +215,18 @@ class RebacModelSyncMixin:
             self._original_tuples = current_tuples
 
     def delete(self, *args: Any, **kwargs: Any) -> None:
+        """Standard instance deletion override."""
         with transaction.atomic():
-            if self.rebac_config is None:
-                raise ImproperlyConfigured(
-                    f"'{self.__class__.__name__}' must define a 'rebac_config' attribute."
-                )
-            for t in RebacTupleAdapter.generate_tuples(self, self.rebac_config):
+            config = self._get_validated_config()
+
+            # 1. Set the flag so the auto-handler knows we already caught it
+            self._rebac_is_deleting = True
+
+            # 2. Queue the deletions
+            for t in RebacTupleAdapter.generate_tuples(self, config):
                 self._queue_outbox(RebacSyncOutbox.Action.DELETE, t)  # type: ignore[arg-type]
+
+            # 3. Proceed with Django's native deletion
             super().delete(*args, **kwargs)  # type: ignore[misc]
 
     def _queue_outbox(self, action: str | RebacSyncOutbox.Action, t: dict[str, str]) -> None:
