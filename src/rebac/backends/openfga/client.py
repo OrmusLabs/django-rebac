@@ -182,7 +182,7 @@ class OpenFGABackend(BaseReBACBackend):
         try:
             batch_response = self.client.batch_check(batch_request)
 
-            for resp in batch_response.responses:
+            for resp in batch_response.result:
                 # Safely read from the SDK response object
                 req = getattr(resp, "_request", getattr(resp, "request", None))
                 if not req:
