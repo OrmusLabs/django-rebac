@@ -134,13 +134,18 @@ class Employee(RebacModelSyncMixin, models.Model):
 
 ---
 
-## The `CASCADE` Deletion Trap & How to Handle It
+## The `CASCADE` and Bulk Deletion Trap
 
-When using `on_delete=models.CASCADE` on a `ForeignKey` (as seen in the models above), you introduce a critical distributed systems challenge.
+**Architectural Warning:** The `RebacModelSyncMixin` guarantees synchronization by intercepting the `.delete()` method on *individual* model instances.
 
-**The Problem:** Django optimizes `CASCADE` deletions by issuing a single, bulk SQL `DELETE` query for all child objects. Bulk operations completely bypass Django's instance-level `.delete()` method. Because the `RebacModelSyncMixin` relies on intercepting `.delete()`, the cascaded child objects will be removed from your PostgreSQL database, but their corresponding relationships will be **permanently orphaned** in the ReBAC graph.
+Because of how Django optimizes database queries, **bulk deletions completely bypass instance-level `.delete()` methods.** This happens in two common scenarios:
 
-You must explicitly orchestrate this dual-write. Here are the two production-ready approaches:
+1. **Bulk QuerySet Deletions:** Calling `Document.objects.filter(is_archived=True).delete()` directly in a view or task.
+2. **SQL Cascades:** When a parent object is deleted and `on_delete=models.CASCADE` triggers the removal of child objects under the hood.
+
+**The Result (The Silent Failure):** The records will be successfully removed from your PostgreSQL database, but the `RebacModelSyncMixin` will never be triggered. Their corresponding relationships will be **permanently orphaned** in the ReBAC graph, leading to phantom permissions and a polluted authorization store.
+
+To maintain perfect eventual consistency, you must explicitly orchestrate these dual-writes. Here are the two production-ready approaches:
 
 ### Approach 1: The Domain Service Layer
 > Recommended

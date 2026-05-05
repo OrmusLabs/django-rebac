@@ -114,13 +114,11 @@ class SecureHierarchyTreeListAPIView(generics.ListAPIView):
         """
         user_attr = get_setting("REBAC_USER_ATTR")
 
-        # 🤠 FIX: Changed `request` to `self.request`
         rebac_user = getattr(self.request, user_attr, None)
         if not rebac_user:
             raise AuthenticationFailed("Missing identity context.")
 
         # STEP 1: Query ReBAC for the allowed IDs
-        # 🤠 FIX: Changed `self.get_rebac_client` to `self.get_rebac_ids`
         allowed_org_ids = self.get_rebac_ids(rebac_user, "organization", "can_list_org")
         allowed_folder_ids = self.get_rebac_ids(rebac_user, "folder", "can_list_folder")
         allowed_doc_ids = self.get_rebac_ids(rebac_user, "document", "can_read_document")
