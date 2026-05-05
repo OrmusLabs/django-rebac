@@ -13,7 +13,7 @@ We solve this using **Stateless Resolution**.
 ## The Stateless Pattern
 > Using `lookup_header` in RebacViewConfig
 
-By utilizing the `lookup_header` (or `Workspace_kwarg`) in your `RebacViewConfig`, the `IsRebacAuthorized` permission class will bypass the local database entirely. It extracts the target Object ID directly from the incoming HTTP request and queries ReBAC.
+By utilizing the `lookup_header` in your `RebacViewConfig`, the `IsRebacAuthorized` permission class will bypass the local database entirely. It extracts the target Object ID directly from the incoming HTTP request and queries ReBAC.
 
 Here is a complete example of a highly decoupled, pluggable Dashboard View.
 

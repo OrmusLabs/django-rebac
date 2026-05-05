@@ -8,25 +8,86 @@ To solve this, `django-rebac` provides the `RebacPermissionSerializerMixin`. It 
 
 To expose ReBAC permissions to your frontend, simply inherit from `RebacPermissionSerializerMixin` and define your ReBAC configurations in the `Meta` class.
 
-> **Note:** Use tuples `()` instead of lists `[]` for `fields` and `rebac_permissions` to comply with Python strict mutability linters (like Ruff's `RUF012`).
+#### 1. The Domain Entity
+> The Model
+
+The model represents your core domain. It does not care about JSON payloads or HTTP requests; it only cares about its internal state. Therefore, the `local_field` must exactly match the Python attribute.
+The following implementation is based on [this DSL schema](./advanced_creation.md#the-rebac-architecture).
+
+```python
+
+class Project(RebacModelSyncMixin, models.Model):
+    """
+    Represents a project belonging to a specific company.
+    """
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="projects")
+    name = models.CharField(max_length=255)
+
+    creator_id = models.CharField(max_length=255, blank=True)
+
+    rebac_config: ClassVar[RebacModelConfig] = RebacModelConfig(
+        object_type="project",
+        parents=[
+            RebacParentConfig(
+                relation="company",
+                parent_type="company",
+                local_field="company_id",
+            )
+        ],
+        # 2. Add the Creator Config to map the DB field to the REBAC 'admin' role
+        creators=[
+            RebacCreatorConfig(
+                relation="admin",
+                local_field="creator_id",
+            )
+        ],
+    )
+
+    def __str__(self) -> str:
+        return str(self.name)
+```
+
+
+#### 2. The Translation Layer
+> The Serializer
+
+By defining the field as company on the model, we introduce a slight impedance mismatch with frontend clients that expect to send and receive a `company_id` in their JSON payloads.
+
+To solve this, we use the DRF Serializer as a strict translation layer. By explicitly defining `company_id` and setting its `source="company"`, DRF bridges the gap between the client's payload and your strict domain model.
 
 ```python
 from rest_framework import serializers
 from rebac import RebacPermissionSerializerMixin
-from .models import Project
+from .models import Project, Company
 
 class ProjectSerializer(RebacPermissionSerializerMixin, serializers.ModelSerializer):
+    # Maps the client's payload key to the model's exact field
+    company_id = serializers.PrimaryKeyRelatedField(
+        source="company",
+        queryset=Company.objects.all(),
+    )
+
     class Meta:
         model = Project
         # The mixin automatically injects "_permissions" into this tuple for you!
-        fields = ("id", "name", "company_id")
+        fields = (
+          "id",
+          "name",
+          "company_id",
+        )
 
         # 1. Define the ReBAC object type for this model
         rebac_object_type = "project"
 
         # 2. Define the exact permissions you want to expose to the frontend
-        rebac_permissions = ("can_update_project", "can_delete_project")
+        rebac_permissions = (
+          "can_update_project",
+          "can_delete_project",
+        )
 ```
+
+> **Note:** Use tuples `()` instead of lists `[]` for `fields` and `rebac_permissions` to comply with Python strict mutability linters (like Ruff's `RUF012`).
 
 ### The JSON Payload
 
