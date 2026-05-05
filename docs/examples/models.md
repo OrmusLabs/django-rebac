@@ -199,6 +199,7 @@ graph LR
     subgraph Generated ReBAC Tuples
         T1["User: <b>folder:fld_456</b><br/>Relation: <b>folder</b><br/>Object: <b>document:doc_123</b>"]:::ReBAC
         T2["User: <b>user:usr_789</b><br/>Relation: <b>editor</b><br/>Object: <b>document:doc_123</b>"]:::ReBAC
+
     end
 
     P_Map ===>|Translates to| T1
