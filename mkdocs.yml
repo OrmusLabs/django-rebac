@@ -122,7 +122,7 @@ plugins:
 
 
 markdown_extensions:
-  # 🤠 The magic formatting tools!
+  # The magic formatting tools!
   - admonition # Enables callout blocks (!!! info, !!! warning, !!! danger)
   - attr_list
   - footnotes

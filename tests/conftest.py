@@ -15,7 +15,7 @@ def mock_rebac_client(mocker):
     mock_client.check.return_value.allowed = True
     mock_client.list_objects.return_value.objects = []
 
-    # 🛠️ THE FIX: Mock the function in the namespaces where it is actually IMPORTED and USED.
+    # Mock the function in the namespaces where it is actually IMPORTED and USED.
     mocker.patch("rebac.tasks.get_rebac_client", return_value=mock_client)
     mocker.patch("rebac.permissions.get_rebac_client", return_value=mock_client)
     mocker.patch("rebac.views.mixins.get_rebac_client", return_value=mock_client)

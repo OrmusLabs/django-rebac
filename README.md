@@ -25,7 +25,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     # ... standard middleware ...
-    'rebac.middleware.TraefikIdentityMiddleware',
+    'rebac.middleware.GatewayIdentityMiddleware',
 ]
 ```
 

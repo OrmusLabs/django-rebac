@@ -11,13 +11,13 @@ class TestProcessOutboxBatch:
     def test_successful_batch_sync(self, mock_rebac_client):
         """Verifies pending tasks are gathered, sent to the ReBAC backend, and marked as Synced."""
         # Create dummy pending tasks
-        task1 = RebacSyncOutbox.objects.create(
+        RebacSyncOutbox.objects.create(
             action=RebacSyncOutbox.Action.WRITE,
             user_id="user:1",
             relation="viewer",
             object_id="doc:1",
         )
-        task2 = RebacSyncOutbox.objects.create(
+        RebacSyncOutbox.objects.create(
             action=RebacSyncOutbox.Action.DELETE,
             user_id="user:2",
             relation="editor",
@@ -60,7 +60,6 @@ class TestProcessOutboxBatch:
         )
 
         # 1. Force the agnostic backend mock to throw a Network Exception
-        # 🛠️ THE FIX: Target write_tuples, not write
         mock_rebac_client.write_tuples.side_effect = Exception("Backend Server Down")
 
         # 2. Intercept Celery's retry mechanism so we can catch the exception safely
