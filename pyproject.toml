@@ -1,10 +1,134 @@
 [build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "django-rebac"
-version = "0.0.2"
+version = "0.1.0"
 description = "A declarative, strictly-typed ReBAC framework for Django."
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.11"
+license = { text = "GPL-3.0-or-later" }
+authors = [{ name = "Sadegh Yazdani", email = "m.s.yazdani86@gmail.com" }]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Web Environment",
+    "Framework :: Django",
+    "Framework :: Django :: 4.2",
+    "Framework :: Django :: 5.0",
+    "Framework :: Django :: 5.1",
+    "Framework :: Django :: 5.2",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+# Core dependencies required for the app to run in production
+dependencies = [
+    "Django>=4.2,<6",
+    "celery>=5.0.0",
+    "openfga-sdk>=0.3.0",
+    "djangorestframework",
+]
+
+[project.urls]
+Homepage = "https://github.com/OrmusLabs/django-rebac"
+Repository = "https://github.com/OrmusLabs/django-rebac"
+Documentation = "https://django-rebac.readthedocs.io"
+"Bug Tracker" = "https://github.com/OrmusLabs/django-rebac/issues"
+
+# Optional dependencies for different environments
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-django",
+    "pytest-cov",
+    "ruff>=0.3.0",
+    "build>=1.0.0",
+    "twine>=5.0.0",
+    "pre-commit>=3.0.0",
+    "pytest-mock>=3.15.1",
+]
+docs = [
+    "mkdocs>=1.6.1,<2",
+    "mike>=2.1.4",
+    "mkdocs-material>=9.7.6",
+    "mkdocstrings[python]>=1.0.3",
+]
+
+# Tell hatchling where the source code lives
+[tool.hatch.build.targets.wheel]
+packages = ["src/rebac"]
+
+# Ruff Configuration (Optional but highly recommended)
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+ignore = []
+
+# ==========================================
+# 🛠️ TESTING CONFIGURATIONS
+# ==========================================
+
+[tool.pytest.ini_options]
+# 1. Stop pytest-django from looking for manage.py
+django_find_project = false
+
+# 2. Tell pytest exactly where your settings live
+DJANGO_SETTINGS_MODULE = "tests.test_settings"
+
+# 3. Add the root directory to the Python path
+pythonpath = ["."]
+python_files = ["test_*.py"]
+# Strict markers and automatic coverage reporting
+addopts = [
+    "--strict-markers",
+    "--nomigrations",            # Speeds up tests by building DB directly from models
+    "--cov=src/rebac", # Target directory for coverage
+    "--cov-report=term-missing", # Show exact lines missing coverage in terminal
+    # "--cov-report=html",         # Generate a beautiful HTML report
+]
+# Define custom markers to organize tests
+markers = [
+    "fga_network: Tests that actually hit a live OpenFGA instance (run rarely)",
+    "celery: Tests validating Celery task execution",
+]
+
+
+[tool.coverage.run]
+branch = true
+source = ["src/rebac"]
+# Exclude files that do not contain business logic
+omit = [
+    "src/rebac/apps.py",
+    "src/rebac/backends/base.py",
+    "src/rebac/admin.py",
+    "*/migrations/*",
+    "__init__.py"
+]
+
+[tool.coverage.report]
+# Enforce a minimum coverage percentage before CI/CD passes
+fail_under = 85
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]
+
+
+[tool.bandit]
+# Exclude the tests directory from security scans
+exclude_dirs = ["tests", ".venv", "venv"]
+# Alternatively, if you only want it to scan the src folder:
+targets = ["src"]
