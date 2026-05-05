@@ -54,7 +54,6 @@ Evaluating permissions for a list of 50 items could easily result in 50 separate
 
 **The mixin solves this automatically.** When a DRF list view requests multiple items (`many=True`), the mixin secretly swaps in a custom `RebacBatchListSerializer`. This batcher intercepts the dataset, aggregates every permission check for every item, and makes **one single sub-millisecond `BatchCheck` network call** to ReBAC. It then maps the results back to the individual items seamlessly.
 
-
 You get perfect performance with zero extra configuration.
 
 ### Security Note: Is exposing permissions safe?
