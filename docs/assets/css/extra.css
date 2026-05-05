@@ -1,0 +1,38 @@
+/* docs/stylesheets/extra.css */
+.md-typeset .mermaid {
+  overflow-x: auto;
+  overflow-y: hidden;
+  text-align: center;
+}
+
+.md-typeset .mermaid svg {
+  min-width: 800px; /* Forces the SVG to stay large */
+  height: auto;
+}
+
+:root > * {
+  /* ==========================================
+     PRIMARY BRANDING: Django Green
+     ========================================== */
+  --md-primary-fg-color:        #0C4B33; /* Standard Django Green */
+  --md-primary-fg-color--light: #15734F; /* Lighter shade for hover states */
+  --md-primary-fg-color--dark:  #062A1C; /* Darker shade for deep headers */
+
+  /* ==========================================
+     ACCENT BRANDING: OpenFGA Violet
+     ========================================== */
+  --md-accent-fg-color:         #8A2BE2; /* Standard OpenFGA Violet */
+  --md-accent-fg-color--transparent: rgba(138, 43, 226, 0.1);
+}
+
+/* * Dark Mode Specific Adjustments
+ * Lightens the primary green slightly so it pops against the dark slate background
+ */
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color:        #15734F;
+  --md-primary-fg-color--light: #1A9063;
+  --md-primary-fg-color--dark:  #0C4B33;
+
+  /* We keep the OpenFGA violet bright for high contrast on dark backgrounds */
+  --md-accent-fg-color:         #9D4EDD;
+}
