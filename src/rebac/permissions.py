@@ -201,7 +201,6 @@ class IsRebacAuthorized(permissions.BasePermission):
 
         try:
             # Defensive lookup for object identifier
-            # 🤠 NEW: Resolve Object ID Statelessly OR Statefuly
             if config.lookup_header:
                 object_id = request.META.get(config.lookup_header)
             elif config.lookup_url_kwarg:

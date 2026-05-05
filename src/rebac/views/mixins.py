@@ -137,7 +137,7 @@ class RebacViewMixin:
 
         # 3. Perform the abstract Backend network check
         if config.object_type and relation_to_check:
-            # 🛠️ THE FIX: Extract user before the try/except block
+            # Extract user before the try/except block
             rebac_user = self._get_rebac_user()
             client = get_rebac_client()
             try:

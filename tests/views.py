@@ -19,7 +19,7 @@ class FinanceDashboardView(APIView):
 
     permission_classes: ClassVar[list] = [IsRebacAuthorized]
 
-    # 🤠 THE STATELESS GUARDRAIL
+    # THE STATELESS GUARDRAIL
     rebac_config = RebacViewConfig(
         object_type="organization",
         read_relation="can_view_finance_dashboard",
