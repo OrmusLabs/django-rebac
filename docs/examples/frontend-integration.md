@@ -6,7 +6,7 @@ To solve this, `django-rebac` provides the `RebacPermissionSerializerMixin`. It 
 
 ### Quickstart
 
-To expose ReBAC permissions to your frontend, simply inherit from `RebacPermissionSerializerMixin` and define your FGA configurations in the `Meta` class.
+To expose ReBAC permissions to your frontend, simply inherit from `RebacPermissionSerializerMixin` and define your ReBAC configurations in the `Meta` class.
 
 > **Note:** Use tuples `()` instead of lists `[]` for `fields` and `rebac_permissions` to comply with Python strict mutability linters (like Ruff's `RUF012`).
 
@@ -52,7 +52,8 @@ Your frontend developers can now conditionally render UI components with zero bu
 
 Evaluating permissions for a list of 50 items could easily result in 50 separate HTTP requests to your ReBAC server, causing massive network bottlenecks (The N+1 Problem).
 
-**The mixin solves this automatically.** When a DRF list view requests multiple items (`many=True`), the mixin secretly swaps in a custom `FGABatchListSerializer`. This batcher intercepts the dataset, aggregates every permission check for every item, and makes **one single sub-millisecond `BatchCheck` network call** to ReBAC. It then maps the results back to the individual items seamlessly.
+**The mixin solves this automatically.** When a DRF list view requests multiple items (`many=True`), the mixin secretly swaps in a custom `RebacBatchListSerializer`. This batcher intercepts the dataset, aggregates every permission check for every item, and makes **one single sub-millisecond `BatchCheck` network call** to ReBAC. It then maps the results back to the individual items seamlessly.
+
 
 You get perfect performance with zero extra configuration.
 

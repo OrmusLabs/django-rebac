@@ -179,7 +179,7 @@ graph LR
     %% Light/Dark Mode Compatible Styling
     classDef django fill:none,stroke:#059669,stroke-width:3px
     classDef mapping fill:none,stroke:#888888,stroke-width:2px,stroke-dasharray: 5 5
-    classDef fga fill:none,stroke:#3b82f6,stroke-width:3px
+    classDef ReBAC fill:none,stroke:#3b82f6,stroke-width:3px
 
     subgraph Django Model Instance
         D[Document<br/>id: doc_123]:::django
@@ -197,8 +197,9 @@ graph LR
     end
 
     subgraph Generated ReBAC Tuples
-        T1["User: <b>folder:fld_456</b><br/>Relation: <b>folder</b><br/>Object: <b>document:doc_123</b>"]:::fga
-        T2["User: <b>user:usr_789</b><br/>Relation: <b>editor</b><br/>Object: <b>document:doc_123</b>"]:::fga
+        T1["User: <b>folder:fld_456</b><br/>Relation: <b>folder</b><br/>Object: <b>document:doc_123</b>"]:::ReBAC
+        T2["User: <b>user:usr_789</b><br/>Relation: <b>editor</b><br/>Object: <b>document:doc_123</b>"]:::ReBAC
+
     end
 
     P_Map ===>|Translates to| T1
