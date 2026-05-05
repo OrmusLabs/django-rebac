@@ -45,6 +45,23 @@ type company
     define can_read_company: viewer
     define can_update_company: admin
     define can_delete_company: admin
+
+# ==========================================
+# LEVEL 2: THE PROJECT
+# ==========================================
+type project
+  relations
+    # 1. Structural Link to the Root
+    define company: [company]
+
+    # 2. Roles (Platform Admins automatically inherit Company Admin rights!)
+    define admin: [user] or admin from company
+    define viewer: [user] or admin
+
+    # 3. Permissions
+    define can_read_project: viewer
+    define can_update_project: viewer
+    define can_delete_project: admin
 ```
 
 ## How to implement the Fallback
