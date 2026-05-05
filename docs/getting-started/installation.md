@@ -121,7 +121,7 @@ __all__ = ("celery_app",)
 And for Celery Beat add this task in the `settings.py`:
 ```python
 CELERY_BEAT_SCHEDULE = {
-    "fga-outbox-sweeper": {
+    "rebac-outbox-sweeper": {
         "task": "rebac.tasks.process_rebac_outbox_batch",
         "schedule": 300.0,  # Sweep the Outbox every 5 minutes
     },
