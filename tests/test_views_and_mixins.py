@@ -232,7 +232,7 @@ class TestViewsAndMixins:
         view.request.rebac_user = "user:bob"
         view.kwargs = {}
 
-        # THE FIX: Sabotage the config properly using the dataclass
+        # Sabotage the config properly using the dataclass
         view.rebac_config = RebacViewConfig(object_type="folder", read_relation=None)
 
         qs = view.get_queryset()
@@ -327,7 +327,7 @@ class TestViewsAndMixins:
         view.request.rebac_user = "user:bob"
         view.kwargs = {}
 
-        # 🤠 Override the config to explicitly opt-out of list filtering
+        # Override the config to explicitly opt-out of list filtering
         view.rebac_config = RebacViewConfig(
             object_type="folder",
             read_relation="can_read_detail",
@@ -532,7 +532,7 @@ class TestViewsAndMixins:
             model = MockCompanyModel
 
         class CallableQSView(RebacViewMixin, generics.GenericAPIView):
-            # 🤠 Notice: No 'queryset' attribute defined here!
+            # Notice: No 'queryset' attribute defined here!
             def get_queryset(self):
                 return MockQuerySet()
 
@@ -577,7 +577,7 @@ class TestViewsAndMixins:
         view = DummyRebacViewMixin()
         view.rebac_config = RebacViewConfig(object_type="folder", update_relation="can_update")
 
-        # 🤠 Use an HTTP method not mapped in the mixin (like TRACE or POST for an object endpoint)
+        # Use an HTTP method not mapped in the mixin (like TRACE or POST for an object endpoint)
         request = api_rf.post("/dummy/1/")
         drf_request = view.initialize_request(request)
         drf_request.rebac_user = "user:bob"

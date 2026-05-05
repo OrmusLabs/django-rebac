@@ -222,7 +222,7 @@ class TestRebacDeletionMechanisms:
         child_1 = MockCascadeChild.objects.create(parent=parent)
         child_2 = MockCascadeChild.objects.create(parent=parent)
 
-        # ⚠️ THE FIX: Capture the primary keys BEFORE they are wiped by Django
+        # Capture the primary keys BEFORE they are wiped by Django
         parent_pk = parent.pk
         child_1_pk = child_1.pk
         child_2_pk = child_2.pk

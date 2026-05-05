@@ -174,7 +174,6 @@ flowchart TD
 
     %% ==========================================
     %% STRUCTURAL INHERITANCE
-    %% THE FIX: Using '====' instead of '===' forces Mermaid to add
     %% an extra vertical layer between subgraphs, preventing title overlap!
     %% ==========================================
     P_SA === O_SA
