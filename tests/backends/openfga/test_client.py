@@ -129,7 +129,9 @@ class TestOpenFGABackend:
         item3._request = None
         item3.request = None
 
-        mock_response.responses = [item1, item2, item3]
+        # `ClientBatchCheckResponse` exposes the items as `.result`, not `.responses`.
+        mock_response.result = [item1, item2, item3]
+
         fga_backend.client.batch_check.return_value = mock_response
 
         checks = [
