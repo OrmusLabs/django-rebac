@@ -119,8 +119,8 @@ class DocumentViewSet(RebacViewMixin, viewsets.ModelViewSet):
 
         # Parent-Level Authorization for Creation (POST)
         # Verifies the user has permission on the parent scope before allowing creation
-        create_parent_type="folder",
-        create_parent_field="folder_id",
+        create_scope_type="folder",
+        create_scope_field="folder_id",
         create_relation="can_add_items"
     )
 ```
