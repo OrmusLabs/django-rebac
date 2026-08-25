@@ -9,7 +9,7 @@ from rebac.conf import validate_settings
 
 class TestSettingsValidation:
     def test_validate_settings_handshake_failure(self, mocker):
-        """Verifies that a mismatch between header targets and the user attribute crashes safely."""
+        """Verifies a mismatch between header targets and the user attribute crashes safely."""
 
         # Mock settings to create a mismatch: mapping targets "rebac_tenant",
         # but expecting "rebac_user"
@@ -26,7 +26,7 @@ class TestSettingsValidation:
             validate_settings()
 
     def test_validate_settings_missing_prefix_colon(self, mocker, caplog):
-        """Verifies that a missing colon in the prefix throws a Developer Experience log warning."""
+        """Verifies a missing colon in the prefix throws a Developer Experience log warning."""
 
         def mock_setting(key):
             if key == "REBAC_USER_PREFIX":
