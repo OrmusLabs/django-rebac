@@ -32,7 +32,8 @@ class OpenFGABackend(BaseReBACBackend):
         """Instantiates the OpenFGA SDK Client.
 
         Raises:
-            ReBACConfigurationError: If the `STORE_ID` is missing or the client fails to initialize.
+            ReBACConfigurationError: If the `STORE_ID` is missing, or the client fails
+                to initialize.
         """
         api_url: str = self.options.get("API_URL", "http://localhost:8080")
         store_id: str | None = self.options.get("STORE_ID")

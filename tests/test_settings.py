@@ -24,7 +24,7 @@ DATABASES = {
 }
 
 # Provide mock FGA Configuration to satisfy the conf.py validators
-rebac = {
+REBAC_CONFIG = {
     "BACKEND_OPTIONS": {
         "STORE_ID": "01H0H0H0H0H0H0H0H0H0H0H0H0",
         "API_URL": "http://localhost:8080",

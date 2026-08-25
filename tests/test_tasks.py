@@ -96,3 +96,84 @@ class TestProcessOutboxBatch:
         task1.refresh_from_db()
         assert task1.retry_count == 5
         assert task1.status == RebacSyncOutbox.Status.FAILED
+
+    def test_failure_only_penalizes_the_claimed_batch(self, mock_rebac_client, mocker, settings):
+        """A failed batch must not charge a retry against rows it never processed.
+
+        Regression test: the failure handler used to re-query for PENDING rows instead of
+        using the batch it had claimed, so any row that happened to be pending at failure
+        time was penalized -- and eventually marked FAILED -- despite never being sent.
+        """
+        from celery.exceptions import Retry
+
+        settings.REBAC_CONFIG = {**settings.REBAC_CONFIG, "BATCH_SIZE": 1}
+
+        rows = {
+            "doc:1": RebacSyncOutbox.objects.create(
+                action=RebacSyncOutbox.Action.WRITE,
+                user_id="user:1",
+                relation="viewer",
+                object_id="doc:1",
+            ),
+            "doc:2": RebacSyncOutbox.objects.create(
+                action=RebacSyncOutbox.Action.WRITE,
+                user_id="user:2",
+                relation="viewer",
+                object_id="doc:2",
+            ),
+        }
+
+        mock_rebac_client.write_tuples.side_effect = Exception("Backend Server Down")
+        mocker.patch("rebac.tasks.process_rebac_outbox_batch.retry", side_effect=Retry)
+
+        with pytest.raises(Retry):
+            process_rebac_outbox_batch()
+
+        # BATCH_SIZE=1, so exactly one row was claimed and sent. Read which one off the
+        # call args rather than assuming an ordering between two identical timestamps.
+        sent = mock_rebac_client.write_tuples.call_args[0][0]
+        assert len(sent) == 1
+        claimed = rows.pop(sent[0]["object"])
+        (untouched,) = rows.values()
+
+        claimed.refresh_from_db()
+        assert claimed.retry_count == 1
+
+        # The row that was never sent must not be charged a failed attempt.
+        untouched.refresh_from_db()
+        assert untouched.retry_count == 0
+        assert untouched.status == RebacSyncOutbox.Status.PENDING
+
+    def test_max_retries_is_read_at_runtime_not_import_time(
+        self, mock_rebac_client, mocker, settings
+    ):
+        """A settings override for MAX_RETRIES must take effect without re-importing.
+
+        Regression test: MAX_RETRIES was baked into the @shared_task decorator, so it was
+        resolved once at import time and could never be changed afterwards.
+        """
+        from celery.exceptions import Retry
+
+        settings.REBAC_CONFIG = {**settings.REBAC_CONFIG, "MAX_RETRIES": 2}
+
+        task1 = RebacSyncOutbox.objects.create(
+            action=RebacSyncOutbox.Action.WRITE,
+            user_id="user:1",
+            relation="viewer",
+            object_id="doc:1",
+            retry_count=1,  # With MAX_RETRIES=2, this attempt is the last one.
+        )
+
+        mock_rebac_client.write_tuples.side_effect = Exception("Backend Server Down")
+        retry_mock = mocker.patch(
+            "rebac.tasks.process_rebac_outbox_batch.retry",
+            side_effect=Retry,
+        )
+
+        with pytest.raises(Retry):
+            process_rebac_outbox_batch()
+
+        task1.refresh_from_db()
+        assert task1.retry_count == 2
+        assert task1.status == RebacSyncOutbox.Status.FAILED
+        assert retry_mock.call_args.kwargs["max_retries"] == 2
