@@ -1,6 +1,4 @@
 # tests/test_serializers.py
-from unittest.mock import MagicMock
-
 import pytest
 from rest_framework import serializers
 
@@ -33,29 +31,6 @@ class DummyFolderSerializer(RebacPermissionSerializerMixin, serializers.ModelSer
 # 🧪 SERIALIZER TEST SUITE
 # ==========================================
 class TestRebacSerializers:
-    def _create_mock_batch_response(self, results_map: list[dict]):
-        """
-        Helper to simulate the complex BatchCheckResponse from the OpenFGA SDK.
-        results_map format: [{"object": "folder:1", "relation": "can_read", "allowed": True}]
-        """
-        mock_response = MagicMock()
-        mock_response.responses = []
-
-        for res in results_map:
-            item = MagicMock()
-            item.allowed = res["allowed"]
-
-            # Simulate the internal request object FGA attaches to the response
-            req = MagicMock()
-            req.object = res["object"]
-            req.relation = res["relation"]
-
-            item._request = req
-            item.request = req
-            mock_response.responses.append(item)
-
-        return mock_response
-
     def test_auto_injection_of_permissions_field(self):
         """Verifies the mixin automatically forces '_permissions' into the serializer fields."""
         serializer = DummyFolderSerializer()
@@ -104,16 +79,6 @@ class TestRebacSerializers:
             f"folder:{f1.id}": {"can_read": True, "can_edit": True},
             f"folder:{f2.id}": {"can_read": True, "can_edit": False},
         }
-        # mock_rebac_client.batch_check.return_value = self._create_mock_batch_response(
-        #     [
-        #         # Bob can do everything on f1
-        #         {"object": f"folder:{f1.id}", "relation": "can_read", "allowed": True},
-        #         {"object": f"folder:{f1.id}", "relation": "can_edit", "allowed": True},
-        #         # Bob can only read f2
-        #         {"object": f"folder:{f2.id}", "relation": "can_read", "allowed": True},
-        #         {"object": f"folder:{f2.id}", "relation": "can_edit", "allowed": False},
-        #     ]
-        # )
 
         # Execute with many=True
         serializer = DummyFolderSerializer([f1, f2], many=True, context={"request": request})

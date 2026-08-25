@@ -1,0 +1,129 @@
+name: CI
+
+# Runs the quality gates that publish.yml depends on. Without this, tagged releases were
+# published without ever having run the test suite or the coverage gate.
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+  # Allows publish.yml (and manual runs) to invoke the same gates.
+  workflow_call:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test (py${{ matrix.python-version }} / Django ${{ matrix.django-version }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.12', '3.13']
+        django-version: ['4.2', '5.2']
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: uv sync --group dev --python ${{ matrix.python-version }}
+
+      - name: Pin Django ${{ matrix.django-version }}
+        run: |
+          uv pip install "Django~=${{ matrix.django-version }}.0"
+          uv run python -c "import django; print('Django', django.get_version())"
+
+      - name: Run test suite
+        run: uv run pytest
+
+      - name: Verify migrations are up to date
+        # Fails if a model was changed without generating the matching migration -- the
+        # exact failure mode that shipped 0.1.3 with no outbox table at all.
+        env:
+          PYTHONPATH: .
+          DJANGO_SETTINGS_MODULE: tests.test_settings
+        run: uv run python -m django makemigrations rebac --check --dry-run
+
+  lint:
+    name: Lint and type-check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --group dev
+
+      - name: Ruff lint
+        run: uv run ruff check src/ tests/
+
+      - name: Ruff format check
+        run: uv run ruff format --check src/ tests/
+
+      - name: Mypy
+        # Pinned to the mirrors-mypy rev in .pre-commit-config.yaml so a mypy release
+        # cannot break CI without also breaking the local hook. mypy is not in the dev
+        # group, so it is installed here rather than coming from uv sync.
+        #
+        # --exclude mirrors the hook's `exclude: ^src/.*/migrations/`; namespace-packages
+        # and explicit-package-bases now come from the ini.
+        run: |
+          uv pip install mypy==1.19.1
+          uv run mypy --config-file=mypy-pre-commit.ini \
+            --exclude '^src/.*/migrations/' \
+            --show-error-codes src/
+
+  build:
+    name: Build distribution
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build a binary wheel and a source tarball
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build
+
+      - name: Verify the wheel ships its data files
+        # py.typed makes the annotations visible to consumers (PEP 561); the migration
+        # creates the outbox table. Both are non-.py files that are easy to lose.
+        run: |
+          python - <<'PY'
+          import pathlib, zipfile, sys
+
+          wheel = next(iter(sorted(pathlib.Path("dist").glob("*.whl"))))
+          names = set(zipfile.ZipFile(wheel).namelist())
+          required = {"rebac/py.typed", "rebac/migrations/0001_initial.py"}
+          missing = required - names
+          if missing:
+              sys.exit(f"{wheel.name} is missing: {sorted(missing)}")
+          print(f"{wheel.name} contains {sorted(required)}")
+          PY
