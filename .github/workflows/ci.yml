@@ -82,10 +82,16 @@ jobs:
         run: uv run ruff format --check src/ tests/
 
       - name: Mypy
+        # Pinned to the mirrors-mypy rev in .pre-commit-config.yaml so a mypy release
+        # cannot break CI without also breaking the local hook. mypy is not in the dev
+        # group, so it is installed here rather than coming from uv sync.
+        #
+        # --exclude mirrors the hook's `exclude: ^src/.*/migrations/`; namespace-packages
+        # and explicit-package-bases now come from the ini.
         run: |
-          uv pip install mypy
+          uv pip install mypy==1.19.1
           uv run mypy --config-file=mypy-pre-commit.ini \
-            --namespace-packages --explicit-package-bases \
+            --exclude '^src/.*/migrations/' \
             --show-error-codes src/
 
   build:
