@@ -48,6 +48,34 @@ class TestProcessOutboxBatch:
         assert deletes[0]["relation"] == "editor"
         assert deletes[0]["object"] == "doc:2"
 
+    def test_flip_flop_resolves_to_latest_state(self, mock_rebac_client):
+        """T2.5: grant -> revoke -> re-grant on the same tuple collapses to latest intent.
+
+        Regression: the old bucketing split a batch into writes-then-deletes, so a
+        re-grant that should win was applied before its matching revoke and the delete
+        removed the grant. Latest-state resolution keeps the final state correct.
+        """
+        o = RebacSyncOutbox
+        o.objects.create(
+            action=o.Action.DELETE, user_id="user:alice", relation="owner", object_id="folder:1"
+        )
+        o.objects.create(
+            action=o.Action.WRITE, user_id="user:bob", relation="owner", object_id="folder:1"
+        )
+        o.objects.create(
+            action=o.Action.DELETE, user_id="user:bob", relation="owner", object_id="folder:1"
+        )
+        o.objects.create(
+            action=o.Action.WRITE, user_id="user:alice", relation="owner", object_id="folder:1"
+        )
+
+        process_rebac_outbox_batch()
+
+        writes = mock_rebac_client.write_tuples.call_args[0][0]
+        deletes = mock_rebac_client.delete_tuples.call_args[0][0]
+        assert writes == [{"user": "user:alice", "relation": "owner", "object": "folder:1"}]
+        assert deletes == [{"user": "user:bob", "relation": "owner", "object": "folder:1"}]
+
     def test_batch_sync_failure_and_retry(self, mock_rebac_client, mocker):
         """Verifies that a network failure triggers a Celery retry and updates retry_count."""
         from celery.exceptions import Retry

@@ -1,5 +1,6 @@
 # django_rebac/backends/openfga/client.py
 import logging
+from typing import Any
 
 from openfga_sdk.client import ClientConfiguration
 from openfga_sdk.client.models import (
@@ -9,6 +10,9 @@ from openfga_sdk.client.models import (
     ClientListObjectsRequest,
     ClientTuple,
     ClientWriteRequest,
+    ClientWriteRequestOnDuplicateWrites,
+    ClientWriteRequestOnMissingDeletes,
+    ConflictOptions,
 )
 from openfga_sdk.exceptions import ValidationException
 from openfga_sdk.sync import OpenFgaClient
@@ -19,6 +23,18 @@ from rebac.backends.base.exceptions import RebacConnectionError, RebacSchemaErro
 from .exceptions import OpenFGAConfigurationError
 
 logger = logging.getLogger(__name__)
+
+# T2.6: The outbox guarantees at-least-once delivery, so every write/delete MUST be
+# idempotent. We pass conflict options to the SDK (which attaches them to each tuple
+# key while keeping the request atomic) so that replaying an already-applied tuple is
+# a no-op instead of a hard error. Without this, a single transient failure after a
+# partial success permanently poisons the batch on every subsequent retry.
+_IDEMPOTENT_WRITE_OPTIONS: dict[str, Any] = {
+    "conflict": ConflictOptions(
+        on_duplicate_writes=ClientWriteRequestOnDuplicateWrites.IGNORE,
+        on_missing_deletes=ClientWriteRequestOnMissingDeletes.IGNORE,
+    )
+}
 
 
 class OpenFGABackend(BaseReBACBackend):
@@ -50,6 +66,15 @@ class OpenFGABackend(BaseReBACBackend):
         except (ValueError, TypeError) as e:
             raise OpenFGAConfigurationError(f"Failed to initialize OpenFGA client: {e}") from e
 
+        # T1.4: Optional OpenFGA read consistency preference. `None` keeps the OpenFGA
+        # server default (HIGHER_CONSISTENCY for check/list_objects); set
+        # "MINIMAL_CONSISTENCY" in BACKEND_OPTIONS to trade freshness for latency on
+        # high-traffic list endpoints.
+        consistency = self.options.get("CONSISTENCY")
+        self._read_options: dict[str, str] | None = (
+            {"consistency": consistency} if consistency else None
+        )
+
     def check(self, user: str, relation: str, obj: str) -> bool:
         """Verifies if a user has a specific relation to an object.
 
@@ -70,7 +95,8 @@ class OpenFGABackend(BaseReBACBackend):
                     user=user,
                     relation=relation,
                     object=obj,
-                )
+                ),
+                options=self._read_options,
             )
             return bool(response.allowed)
         except ValidationException as e:
@@ -107,7 +133,8 @@ class OpenFGABackend(BaseReBACBackend):
                     user=user,
                     relation=relation,
                     type=object_type,
-                )
+                ),
+                options=self._read_options,
             )
         except ValidationException as e:
             logger.error(f"ReBAC ListObjects Schema Mismatch: {e}")
@@ -147,7 +174,8 @@ class OpenFGABackend(BaseReBACBackend):
 
         # We allow exceptions to bubble up here so the Celery task (ReBACSyncOutbox)
         # can catch them and trigger its retry logic automatically.
-        self.client.write(request)
+        # T2.6: conflict options make the write idempotent for safe outbox replays.
+        self.client.write(request, options=_IDEMPOTENT_WRITE_OPTIONS)
 
     def delete_tuples(self, tuples: list[dict[str, str]]) -> None:
         """Deletes relationships from the OpenFGA store.
@@ -161,7 +189,8 @@ class OpenFGABackend(BaseReBACBackend):
         fga_deletes = self._convert_to_client_tuples(tuples)
         request = ClientWriteRequest(writes=[], deletes=fga_deletes)
 
-        self.client.write(request)
+        # T2.6: ignore missing tuples so outbox replays stay idempotent.
+        self.client.write(request, options=_IDEMPOTENT_WRITE_OPTIONS)
 
     def batch_check(self, checks: list[dict[str, str]]) -> dict[str, dict[str, bool]]:
         """
@@ -181,7 +210,7 @@ class OpenFGABackend(BaseReBACBackend):
         results_map: dict[str, dict[str, bool]] = {}
 
         try:
-            batch_response = self.client.batch_check(batch_request)
+            batch_response = self.client.batch_check(batch_request, options=self._read_options)
 
             for resp in batch_response.result:
                 # Safely read from the SDK response object

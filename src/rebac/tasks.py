@@ -31,18 +31,29 @@ def _claim_pending_batch() -> list[RebacSyncOutbox]:
 def _sync_batch(pending_tasks: list[RebacSyncOutbox]) -> str:
     """Pushes one claimed batch to the configured ReBAC backend and marks it synced.
 
+    Tuples are resolved to each key's *latest* intended state before any network call:
+    for every ``(user, relation, object)`` key only the most recently enqueued row
+    survives. This collapses a ``grant -> revoke -> re-grant`` flip-flop into a single
+    correct write, and -- combined with the idempotent backend contract (T2.6) -- keeps
+    outbox replays correct regardless of how the rows were partitioned.
+
     Args:
-        pending_tasks: The rows claimed by :func:`_claim_pending_batch`.
+        pending_tasks: The rows claimed by :func:`_claim_pending_batch`, in enqueue order.
 
     Returns:
         str: A human-readable summary of the work performed.
     """
     rebac_client = get_rebac_client()
+
+    # Keep only the newest outbox row per tuple key. `pending_tasks` arrives in enqueue
+    # order (created_at, id), so later rows overwrite earlier ones for the same key.
+    latest: dict[tuple[str, str, str], RebacSyncOutbox] = {}
+    for task in pending_tasks:
+        latest[(task.user_id, task.relation, task.object_id)] = task
+
     writes: list[dict[str, str]] = []
     deletes: list[dict[str, str]] = []
-
-    # Map database outbox models into abstract dictionaries
-    for task in pending_tasks:
+    for task in latest.values():
         tuple_dict = {
             "user": task.user_id,
             "relation": task.relation,

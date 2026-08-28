@@ -66,6 +66,7 @@ nav:
   - "Getting Started":
     - Installation: getting-started/installation.md
     - Traefik Setup: getting-started/docker-traefik.md
+    - Read-After-Write Consistency: getting-started/read-after-write.md
 
   - "Guides: Schema & Data Modeling":
     - Roles vs. Permissions: schema/design-guide.md

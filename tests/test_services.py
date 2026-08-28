@@ -43,3 +43,48 @@ class TestRebacTupleIngestionService:
         # 2. Mathematical Proof of Async Trigger
         # Assert that the Celery task was successfully queued upon transaction commit
         mock_delay.assert_called_once()
+
+    @pytest.mark.parametrize(
+        ("sync_mode", "expected", "unexpected"),
+        [("INLINE", "apply", "delay"), ("ASYNC", "delay", "apply")],
+    )
+    def test_trigger_sync_dispatches_by_mode(
+        self, settings, sync_mode: str, expected: str, unexpected: str
+    ):
+        """T1.4: SYNC_MODE selects the dispatch strategy (INLINE=.apply, ASYNC=.delay)."""
+        settings.REBAC_CONFIG = {**settings.REBAC_CONFIG, "SYNC_MODE": sync_mode}
+        RebacSyncOutbox.objects.all().delete()
+
+        with (
+            patch(f"rebac.tasks.process_rebac_outbox_batch.{expected}") as called,
+            patch(f"rebac.tasks.process_rebac_outbox_batch.{unexpected}") as not_called,
+        ):
+            RebacTupleIngestionService.queue_tuple(
+                action=RebacSyncOutbox.Action.WRITE,
+                user="user:x",
+                relation="viewer",
+                rebac_object="d:1",
+            )
+
+        called.assert_called_once()
+        not_called.assert_not_called()
+
+    def test_dispatch_failure_is_swallowed(self, settings):
+        """T1.4: a broker failure must not 500 a request that already committed."""
+        settings.REBAC_CONFIG = {**settings.REBAC_CONFIG, "SYNC_MODE": "ASYNC"}
+        RebacSyncOutbox.objects.all().delete()
+
+        with patch(
+            "rebac.tasks.process_rebac_outbox_batch.delay",
+            side_effect=RuntimeError("broker down"),
+        ):
+            # Must NOT raise, even though the commit-hook dispatch fails.
+            RebacTupleIngestionService.queue_tuple(
+                action=RebacSyncOutbox.Action.WRITE,
+                user="user:x",
+                relation="viewer",
+                rebac_object="d:1",
+            )
+
+        # The outbox row is durable regardless of the dispatch failure.
+        assert RebacSyncOutbox.objects.count() == 1

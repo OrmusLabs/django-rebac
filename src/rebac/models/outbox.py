@@ -34,7 +34,7 @@ class RebacSyncOutbox(models.Model):
     class Meta:
         verbose_name = "ReBac Sync Task"
         verbose_name_plural = "ReBac Sync Tasks"
-        ordering = ("created_at",)
+        ordering = ("created_at", "id")
 
     def __str__(self) -> str:
         return f"{self.action} {self.relation} for {self.object_id} ({self.status})"

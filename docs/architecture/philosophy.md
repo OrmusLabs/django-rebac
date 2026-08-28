@@ -24,6 +24,9 @@ This package solves this using the **Transactional Outbox Pattern**:
 3. Once the database commit is successful, a Celery task (`process_rebac_outbox_batch`) is triggered to asynchronously sweep the outbox and push the tuples to the the ReBAC engine server.
 
 This guarantees **eventual consistency**. If the the ReBAC engine server goes down, the Celery task will utilize exponential backoff to retry the batch later.
+
+!!! note "Read-after-write"
+    Because writes are pushed to the engine *after* the commit, a relationship you just wrote is only visible to authorization queries **after the outbox drains** — a create-then-read can briefly 403. See the [Read-After-Write Consistency](../getting-started/read-after-write.md) guide for the `SYNC_MODE` and `CONSISTENCY` knobs that close this window.
 ### Declarative Security
 The package embraces a declarative approach. Developers do not write complex logic to sync data or check permissions. Instead, they define strict, type-safe dataclass configurations (`RebacModelConfig` on models or `RebacViewConfig` on views), and the underlying mixins handle the complex graph traversals and API calls.
 

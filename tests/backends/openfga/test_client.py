@@ -2,6 +2,10 @@
 from unittest.mock import MagicMock
 
 import pytest
+from openfga_sdk.client.models import (
+    ClientWriteRequestOnDuplicateWrites,
+    ClientWriteRequestOnMissingDeletes,
+)
 from openfga_sdk.exceptions import ValidationException
 
 from rebac.backends.base.exceptions import RebacConnectionError, RebacSchemaError
@@ -95,6 +99,28 @@ class TestOpenFGABackend:
 
         fga_backend.client.write.assert_called_once()
 
+    def test_write_tuples_passes_idempotent_conflict_options(self, fga_backend: OpenFGABackend):
+        """T2.6: writes must be idempotent so an outbox replay never poisons a batch."""
+        fga_backend.write_tuples(
+            [{"user": "user:bob", "relation": "viewer", "object": "document:1"}]
+        )
+
+        _, kwargs = fga_backend.client.write.call_args
+        conflict = kwargs["options"]["conflict"]
+        assert conflict.on_duplicate_writes == ClientWriteRequestOnDuplicateWrites.IGNORE
+        assert conflict.on_missing_deletes == ClientWriteRequestOnMissingDeletes.IGNORE
+
+    def test_delete_tuples_passes_idempotent_conflict_options(self, fga_backend: OpenFGABackend):
+        """T2.6: deletes must ignore missing tuples so outbox replays stay idempotent."""
+        fga_backend.delete_tuples(
+            [{"user": "user:bob", "relation": "viewer", "object": "document:1"}]
+        )
+
+        _, kwargs = fga_backend.client.write.call_args
+        conflict = kwargs["options"]["conflict"]
+        assert conflict.on_duplicate_writes == ClientWriteRequestOnDuplicateWrites.IGNORE
+        assert conflict.on_missing_deletes == ClientWriteRequestOnMissingDeletes.IGNORE
+
     # ==========================================
     # 🧪 4. BATCH CHECKS
     # ==========================================
@@ -151,3 +177,21 @@ class TestOpenFGABackend:
         result = fga_backend.batch_check(checks)
 
         assert result == {}
+
+    # ==========================================
+    # 🧪 5. T1.4 READ CONSISTENCY PREFERENCE
+    # =========================================
+    def test_read_options_none_by_default(self, fga_backend: OpenFGABackend):
+        """T1.4: no consistency preference is forced by default (OpenFGA server default)."""
+        assert fga_backend._read_options is None
+
+    def test_check_forwards_configured_consistency(self):
+        """T1.4: a configured CONSISTENCY preference is forwarded to the SDK."""
+        backend = OpenFGABackend(STORE_ID="test_store_123", CONSISTENCY="HIGHER_CONSISTENCY")
+        backend.client = MagicMock()
+        backend.client.check.return_value.allowed = True
+
+        backend.check("user:bob", "viewer", "document:1")
+
+        _, kwargs = backend.client.check.call_args
+        assert kwargs["options"] == {"consistency": "HIGHER_CONSISTENCY"}

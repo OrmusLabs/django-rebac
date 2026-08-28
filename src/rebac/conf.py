@@ -15,6 +15,11 @@ DEFAULTS: dict[str, Any] = {
     "BACKEND_OPTIONS": {},
     "BATCH_SIZE": 50,
     "MAX_RETRIES": 5,
+    # T1.4: How the outbox drain is dispatched after a transaction commits.
+    # "ASYNC"  (default) enqueues a Celery task via `.delay()`.
+    # "INLINE" runs the drain in-process via `.apply()` so writes are visible
+    #           immediately (recommended for local development and CI read-after-write).
+    "SYNC_MODE": "ASYNC",
     "REQUEST_HEADER_MAPPINGS": {
         "X-User-Id": "rebac_user",
         # "X-Context-Org-Id": "rebac_tenant",
@@ -55,6 +60,10 @@ Attributes:
          Defaults to `50`.
     MAX_RETRIES (int): How many times to retry failed synchronization attempts.
          Defaults to `5`.
+    SYNC_MODE (str): How the outbox drain is dispatched after a transaction commits.
+         "ASYNC" (default) enqueues a Celery task (`.delay()`); "INLINE" runs the drain
+         in-process (`.apply()`) so writes are visible immediately -- recommended for
+         local development and CI to eliminate the create-then-read consistency gap.
     REQUEST_HEADER_MAPPINGS (dict[str, str]): Mapping of incoming request
         headers to ReBAC context variables.
     ENABLE_OUTBOX_ADMIN (bool): If True, registers the ReBAC Outbox model in
