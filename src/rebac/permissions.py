@@ -148,9 +148,9 @@ class IsRebacAuthorized(permissions.BasePermission):
     ) -> bool:
         """Validates fine-grained object access based on HTTP method or ViewSet action.
 
-        If the corresponding relation in the view's RebacViewConfig is explicitly set
-        to None, this check is bypassed and access is automatically granted, adhering
-        to the documented opt-out contract.
+        If the corresponding relation in the view's RebacViewConfig resolves to
+        None (unmapped method or an unconfigured relation), access is DENIED —
+        the check is never silently bypassed (T1.1/T1.2: deny by default).
 
         Args:
             request: The incoming HTTP request.
@@ -158,8 +158,8 @@ class IsRebacAuthorized(permissions.BasePermission):
             obj: The database object being accessed.
 
         Returns:
-            bool: True if the user holds the required relation on the object (or if the
-                  check is explicitly disabled), False otherwise.
+            bool: True if the user holds the required relation on the object,
+                  False otherwise (including unconfigured relations).
         """
         config = self._get_config(view)
         required_relation: str | None = None
@@ -188,9 +188,16 @@ class IsRebacAuthorized(permissions.BasePermission):
             logger.warning(f"ReBAC Authorization denied: Unmapped HTTP method '{request.method}'.")
             return False
 
-        # 3. Handle Explicit Opt-Out (Relation is mapped, but explicitly set to None)
+        # T1.1: Unconfigured relation → deny by default (relation=None must never allow)
         if required_relation is None:
-            return True
+            # T1.1: SECURITY - Deny by default when required_relation is None (was allow)
+            # This prevents accidental world-readable collections (T1.1: Fail-open by omission)
+            logger.warning(
+                f"ReBAC Authorization denied: No relation configured for '{request.method}' "
+                f"on object type '{config.object_type}'. Configure the relation to allow "
+                f"access — an unconfigured relation always denies (T1.1: deny by default)."
+            )
+            return False
 
         # 4. Perform ReBAC Network Check
         user_attr = get_setting("REBAC_USER_ATTR")

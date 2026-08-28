@@ -129,22 +129,23 @@ class TestAuthorizationParity:
         assert called_kwargs["user"] == "user:mallory"
 
     @pytest.mark.parametrize("view_class", VIEW_STRATEGIES, ids=["PermissionClass", "Mixin"])
-    def test_parity_explicit_bypass_none_relation(self, api_rf, mock_rebac_client, view_class):
-        """Both strategies MUST bypass FGA network checks if the relation is None."""
+    def test_parity_unconfigured_relation_denied(self, api_rf, mock_rebac_client, view_class):
+        """T1.2: Both strategies MUST deny (not bypass) if the resolved relation is None."""
         folder = MockFolder.objects.create(name="Public", org_id="o1", creator_id="u1")
 
         wsgi_request = api_rf.get(f"/dummy/{folder.id}/")
         view, drf_request = self._prepare_drf_request(view_class, wsgi_request)
         drf_request.rebac_user = "user:bob"
 
-        # Mutate the configuration at the instance level to explicitly bypass read checks
+        # Mutate the configuration at the instance level: no relation configured for GET
         view.rebac_config = RebacViewConfig(
             object_type="folder",
-            read_relation=None,  # Explicit Opt-Out
+            read_relation=None,  # Unconfigured → must deny, not bypass
         )
 
-        # Execute check
-        view.check_object_permissions(drf_request, folder)
+        # Both paths must deny with a 403-class APIException
+        with pytest.raises(APIException):
+            view.check_object_permissions(drf_request, folder)
 
         # Mathematical proof of parity: The FGA client MUST NOT have been called
         mock_rebac_client.check.assert_not_called()

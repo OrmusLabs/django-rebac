@@ -228,6 +228,21 @@ class RebacViewMixin:
             elif request.method in ["GET", "OPTIONS", "HEAD"]:
                 relation = config.read_relation
 
+        # T1.2: Behavioral parity with IsRebacAuthorized — a view that declares
+        # an object_type but resolves to no relation for this method must DENY,
+        # not silently bypass the check (e.g., a custom @action missing from
+        # `action_relations`). Previously this path returned without any check.
+        if config.object_type and not relation:
+            logger.warning(
+                "ReBAC Authorization denied: No relation resolved for "
+                f"'{request.method}' on object type '{config.object_type}'. "
+                "Configure the relation (or an action_relations entry) to allow access."
+            )
+            raise PermissionDenied(
+                f"ReBAC: No relation is configured for '{request.method}' "
+                f"on '{config.object_type}'."
+            )
+
         if config.object_type and relation:
             object_id = None
             if config.lookup_header:

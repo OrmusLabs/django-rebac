@@ -147,3 +147,128 @@ class TestGatewayIdentityMiddleware:
         # 2. Other mapped attributes MUST NOT get the prefix
         assert mock_request.rebac_tenant == "acme-corp"
         assert mock_request.rebac_department == "engineering"
+
+    @patch("rebac.middleware.settings")
+    @patch("rebac.middleware.get_setting")
+    def test_trusted_proxies_drops_headers_from_untrusted_address(self, mock_get_setting, mock_settings):
+        """T1.3: inbound headers are dropped when REMOTE_ADDR is not in the allowlist."""
+        mock_settings.DEBUG = False
+
+        mock_get_setting.side_effect = lambda key: {
+            "REQUEST_HEADER_MAPPINGS": {"X-User-Id": "rebac_user"},
+            "REBAC_USER_ATTR": "rebac_user",
+            "REBAC_USER_PREFIX": "user:",
+            "LOCAL_DEV_FALLBACK": {"USE_DJANGO_USER": False, "TRUSTED_PROXIES": ["10.0.0.5"]},
+        }.get(key)
+
+        middleware = GatewayIdentityMiddleware(MagicMock(return_value="response"))
+
+        mock_request = MagicMock()
+        mock_request.headers = {"X-User-Id": "spoofed-attacker"}
+        mock_request.META = {"REMOTE_ADDR": "203.0.113.7"}
+
+        middleware(mock_request)
+
+        # The client-controlled value must be ignored — no identity attached
+        assert mock_request.rebac_user is None
+
+    @patch("rebac.middleware.settings")
+    @patch("rebac.middleware.get_setting")
+    def test_trusted_proxies_allows_headers_from_trusted_address(self, mock_get_setting, mock_settings):
+        """T1.3: inbound headers are honored when REMOTE_ADDR is in the allowlist."""
+        mock_settings.DEBUG = False
+
+        mock_get_setting.side_effect = lambda key: {
+            "REQUEST_HEADER_MAPPINGS": {"X-User-Id": "rebac_user"},
+            "REBAC_USER_ATTR": "rebac_user",
+            "REBAC_USER_PREFIX": "user:",
+            "LOCAL_DEV_FALLBACK": {"USE_DJANGO_USER": False, "TRUSTED_PROXIES": ["10.0.0.5"]},
+        }.get(key)
+
+        middleware = GatewayIdentityMiddleware(MagicMock(return_value="response"))
+
+        mock_request = MagicMock()
+        mock_request.headers = {"X-User-Id": "123-abc"}
+        mock_request.META = {"REMOTE_ADDR": "10.0.0.5"}
+
+        middleware(mock_request)
+
+        assert mock_request.rebac_user == "user:123-abc"
+
+    @patch("rebac.middleware.settings")
+    @patch("rebac.middleware.get_setting")
+    def test_trusted_proxies_gate_disabled_when_allowlist_empty(self, mock_get_setting, mock_settings):
+        """T1.3: an empty TRUSTED_PROXIES keeps the legacy behavior (headers trusted)."""
+        mock_settings.DEBUG = False
+
+        mock_get_setting.side_effect = lambda key: {
+            "REQUEST_HEADER_MAPPINGS": {"X-User-Id": "rebac_user"},
+            "REBAC_USER_ATTR": "rebac_user",
+            "REBAC_USER_PREFIX": "user:",
+            "LOCAL_DEV_FALLBACK": {"USE_DJANGO_USER": False, "TRUSTED_PROXIES": []},
+        }.get(key)
+
+        middleware = GatewayIdentityMiddleware(MagicMock(return_value="response"))
+
+        mock_request = MagicMock()
+        mock_request.headers = {"X-User-Id": "123-abc"}
+        mock_request.META = {"REMOTE_ADDR": "203.0.113.7"}
+
+        middleware(mock_request)
+
+        assert mock_request.rebac_user == "user:123-abc"
+
+    @patch("rebac.middleware.settings")
+    @patch("rebac.middleware.get_setting")
+    def test_trusted_proxies_missing_remote_addr_is_untrusted(self, mock_get_setting, mock_settings):
+        """T1.3: a non-empty allowlist with no REMOTE_ADDR must be treated as untrusted."""
+        mock_settings.DEBUG = False
+
+        mock_get_setting.side_effect = lambda key: {
+            "REQUEST_HEADER_MAPPINGS": {"X-User-Id": "rebac_user"},
+            "REBAC_USER_ATTR": "rebac_user",
+            "REBAC_USER_PREFIX": "user:",
+            "LOCAL_DEV_FALLBACK": {"USE_DJANGO_USER": False, "TRUSTED_PROXIES": ["10.0.0.5"]},
+        }.get(key)
+
+        middleware = GatewayIdentityMiddleware(MagicMock(return_value="response"))
+
+        mock_request = MagicMock()
+        mock_request.headers = {"X-User-Id": "123-abc"}
+        mock_request.META = {"REMOTE_ADDR": None}
+
+        middleware(mock_request)
+
+        assert mock_request.rebac_user is None
+
+    @patch("rebac.middleware.settings")
+    @patch("rebac.middleware.get_setting")
+    def test_trusted_proxies_drop_still_allows_debug_fallback(self, mock_get_setting, mock_settings):
+        """T1.3: dropping an untrusted header must not block the DEBUG local-dev fallback."""
+        mock_settings.DEBUG = True
+
+        mock_get_setting.side_effect = lambda key: {
+            "REQUEST_HEADER_MAPPINGS": {"X-User-Id": "rebac_user"},
+            "REBAC_USER_ATTR": "rebac_user",
+            "REBAC_USER_PREFIX": "user:",
+            "LOCAL_DEV_FALLBACK": {
+                "USE_DJANGO_USER": True,
+                "STATIC_USER_ID": None,
+                "TRUSTED_PROXIES": ["10.0.0.5"],
+            },
+        }.get(key)
+
+        middleware = GatewayIdentityMiddleware(MagicMock(return_value="response"))
+
+        mock_request = MagicMock()
+        # Client-supplied header from an untrusted address (dropped by the gate)
+        mock_request.headers = {"X-User-Id": "spoofed-attacker"}
+        mock_request.META = {"REMOTE_ADDR": "127.0.0.1"}
+        # Authenticated Django session user (local-dev fallback source)
+        mock_request.user.is_authenticated = True
+        mock_request.user.id = 42
+
+        middleware(mock_request)
+
+        # The spoofed header is dropped; identity comes from the Django user instead
+        assert mock_request.rebac_user == "user:42"

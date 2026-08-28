@@ -235,19 +235,19 @@ class TestIsRebacAuthorized:
         assert perm.has_object_permission(request, view, MockFolder(id=1)) is False
         mock_rebac_client.check.assert_not_called()
 
-    def test_has_object_permission_explicit_opt_out(self, api_rf, mock_rebac_client):
-        """Verifies that setting a mapped relation to None bypasses the network check."""
+    def test_has_object_permission_unconfigured_relation_denies(self, api_rf, mock_rebac_client):
+        """T1.1: a mapped relation of None must DENY, never bypass the check."""
         view = DummyProtectedView()
-        # Explicitly opt-out of read checks
+        # Relation unconfigured for GET (read_relation=None)
         view.rebac_config = RebacViewConfig(object_type="document", read_relation=None)
 
         request = api_rf.get("/dummy/1/")
         request.rebac_user = "user:bob"
 
         perm = IsRebacAuthorized()
-        assert perm.has_object_permission(request, view, MockFolder(id=1)) is True
+        assert perm.has_object_permission(request, view, MockFolder(id=1)) is False
 
-        # Mathematical proof: It bypassed the check, so the network was never called
+        # Mathematical proof: It denied before touching the network
         mock_rebac_client.check.assert_not_called()
 
     def test_stateless_resolution_via_url_kwarg(self, api_rf, mock_rebac_client):

@@ -35,6 +35,27 @@ Run migrations to create the Outbox table in your database:
 python manage.py migrate rebac
 ```
 
+## 🔒 Security: Identity Headers (read this before deploying)
+
+`GatewayIdentityMiddleware` **trusts** the identity headers it reads (e.g., `X-User-Id`) to be set by your infrastructure, not by clients. This is a hard requirement:
+
+- **Run behind a trusting-boundary proxy.** Use forward auth — e.g., [Traefik `forwardauth`](https://doc.traefik.io/traefik/middlewares/forwardauth/) with OAuth2Proxy/Auth0, a Kong auth plugin, or an ingress auth filter — so the proxy **sets** `X-User-Id` from the verified token/session and **strips** any client-supplied value of that header. If Django is reachable directly (a sidecar, a health-probe path, a misordered ingress rule), `X-User-Id` becomes client-controlled authentication.
+- **Optionally enforce a proxy allowlist.** Set `LOCAL_DEV_FALLBACK["TRUSTED_PROXIES"]` to the IPs of your trusted proxies. When the list is non-empty, inbound identity/context headers arriving from any other `REMOTE_ADDR` are dropped (and logged):
+
+  ```python
+  REBAC_CONFIG = {
+      # ...
+      "LOCAL_DEV_FALLBACK": {
+          "USE_DJANGO_USER": False,        # DEBUG-only local dev fallback
+          "STATIC_USER_ID": None,
+          "TRUSTED_PROXIES": ["10.0.0.5"],  # e.g., your Traefik pod IP
+      },
+  }
+  ```
+
+  An empty list (the default) leaves the gate **off** — headers are then trusted unconditionally, so the trusting-boundary proxy above is mandatory.
+- **Local development.** With `DEBUG=True`, set `USE_DJANGO_USER: True` (uses the logged-in Django user) or `STATIC_USER_ID: "..."` to get an identity without a gateway. Both fallbacks are ignored when `DEBUG=False`, and both default to off.
+
 ## ⚙️ Configuration
 
 Configure the package by adding the `REBAC_CONFIG` dictionary to your `settings.py`.

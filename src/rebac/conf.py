@@ -27,12 +27,21 @@ DEFAULTS: dict[str, Any] = {
     "REBAC_USER_ATTR": "rebac_user",
     # Prefix added automatically to the user ID
     "REBAC_USER_PREFIX": "user:",
-    # Local Dev Settings - Remove it for Production!
+    # T1.3: Local Dev Settings - SECURITY WARNING: USE_DJANGO_USER should be False in production!
     "LOCAL_DEV_FALLBACK": {
-        # If True, falls back to Django's native session/token user if the Gateway is missing
-        "USE_DJANGO_USER": True,
+        # T1.3: SECURITY - Set to False in production. Only True for local development.
+        # In production, use a trusting-proxy architecture (e.g., Traefik forward-auth).
+        # Or configure TRUSTED_PROXIES for your proxy IPs.
+        "USE_DJANGO_USER": False,
         # Optional: A hardcoded string fallback if you don't want to use the database at all
         "STATIC_USER_ID": None,
+        # T1.3: Allowlist of trusted proxy IPs, matched exactly against REMOTE_ADDR.
+        # When non-empty, inbound identity/context headers are ONLY honored from
+        # these addresses; values from any other remote address are dropped and logged.
+        # Empty (default) = gate disabled and headers trusted unconditionally —
+        # in that case your proxy MUST be the trusting boundary
+        # (e.g., Traefik forward-auth) that sets and strips these headers.
+        "TRUSTED_PROXIES": [],
     },
 }
 """Sensible defaults for the django-rebac integration.
@@ -57,9 +66,11 @@ Attributes:
         when identity providers are absent.
 
         - **USE_DJANGO_USER**: Fallback to native Django session user.
-             Defaults to `True`.
+             Defaults to `False` (changed from `True`).
         - **STATIC_USER_ID**: A hardcoded ID for rapid testing.
              Defaults to `None`.
+        - **TRUSTED_PROXIES**: List of trusted proxy IPs for header validation.
+             Defaults to `[]` (empty list).
 """
 
 

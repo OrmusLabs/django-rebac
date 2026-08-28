@@ -572,8 +572,8 @@ class TestViewsAndMixins:
         view.check_permissions(drf_request)
         mock_check.assert_not_called()
 
-    def test_RebacViewMixin_check_object_permissions_unmapped_method_bypasses(self, api_rf, mocker):
-        """Verifies unmapped HTTP methods bypass ReBAC object checks safely."""
+    def test_RebacViewMixin_check_object_permissions_unmapped_method_denies(self, api_rf, mocker):
+        """T1.2: unmapped HTTP methods must DENY, not bypass ReBAC object checks."""
         view = DummyRebacViewMixin()
         view.rebac_config = RebacViewConfig(object_type="folder", update_relation="can_update")
 
@@ -585,8 +585,11 @@ class TestViewsAndMixins:
 
         mock_client = mocker.patch("rebac.views.mixins.get_rebac_client")
 
-        # Relation will remain None, so it should bypass FGA completely
-        view.check_object_permissions(drf_request, MockFolder(id=1))
+        # Relation resolves to None, so the check must deny with a 403
+        with pytest.raises(PermissionDenied):
+            view.check_object_permissions(drf_request, MockFolder(id=1))
+
+        # Mathematical proof: It denied before touching the FGA backend
         mock_client.assert_not_called()
 
     def test_RebacViewMixin_check_object_permissions_url_kwarg(self, api_rf, mock_rebac_client):
