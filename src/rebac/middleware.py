@@ -138,21 +138,23 @@ class GatewayIdentityMiddleware:
             # 4. Apply prefix and attach if a value was resolved
             # T1.3: Validate header value if present (T1.3: Identity header validation)
             if header_value:
-                # T1.3: Reject wildcard values like "user:*" which match all grants in OpenFGA (T1.3)
+                # T1.3: Reject wildcard values like "user:*" which match all grants in OpenFGA
                 if header_value == "*" or header_value.endswith(":*"):
-                    logger.error(f"ReBAC: Invalid wildcard user identifier detected: {header_value}")
+                    logger.error(
+                        f"ReBAC: Invalid wildcard user identifier detected: {header_value}"
+                    )
                     header_value = None  # Treat as no header
                 # Validate user identifier format (without prefix)
                 elif target_attr == rebac_user_attr:
                     # Remove prefix if present to validate the raw identifier
                     raw_id = header_value
                     if rebac_prefix and header_value.startswith(rebac_prefix):
-                        raw_id = header_value[len(rebac_prefix):]
+                        raw_id = header_value[len(rebac_prefix) :]
                     # Only allow alphanumeric, underscore, and hyphen in user IDs
-                    if not re.match(r'^[a-zA-Z0-9_-]+$', raw_id):
+                    if not re.match(r"^[a-zA-Z0-9_-]+$", raw_id):
                         logger.error(f"ReBAC: Invalid user identifier format '{header_value}'")
                         header_value = None
-            
+
             if header_value:
                 if target_attr == rebac_user_attr:
                     header_value = f"{rebac_prefix}{header_value}"

@@ -150,7 +150,9 @@ class TestGatewayIdentityMiddleware:
 
     @patch("rebac.middleware.settings")
     @patch("rebac.middleware.get_setting")
-    def test_trusted_proxies_drops_headers_from_untrusted_address(self, mock_get_setting, mock_settings):
+    def test_trusted_proxies_drops_headers_from_untrusted_address(
+        self, mock_get_setting, mock_settings
+    ):
         """T1.3: inbound headers are dropped when REMOTE_ADDR is not in the allowlist."""
         mock_settings.DEBUG = False
 
@@ -174,7 +176,9 @@ class TestGatewayIdentityMiddleware:
 
     @patch("rebac.middleware.settings")
     @patch("rebac.middleware.get_setting")
-    def test_trusted_proxies_allows_headers_from_trusted_address(self, mock_get_setting, mock_settings):
+    def test_trusted_proxies_allows_headers_from_trusted_address(
+        self, mock_get_setting, mock_settings
+    ):
         """T1.3: inbound headers are honored when REMOTE_ADDR is in the allowlist."""
         mock_settings.DEBUG = False
 
@@ -197,7 +201,9 @@ class TestGatewayIdentityMiddleware:
 
     @patch("rebac.middleware.settings")
     @patch("rebac.middleware.get_setting")
-    def test_trusted_proxies_gate_disabled_when_allowlist_empty(self, mock_get_setting, mock_settings):
+    def test_trusted_proxies_gate_disabled_when_allowlist_empty(
+        self, mock_get_setting, mock_settings
+    ):
         """T1.3: an empty TRUSTED_PROXIES keeps the legacy behavior (headers trusted)."""
         mock_settings.DEBUG = False
 
@@ -220,7 +226,9 @@ class TestGatewayIdentityMiddleware:
 
     @patch("rebac.middleware.settings")
     @patch("rebac.middleware.get_setting")
-    def test_trusted_proxies_missing_remote_addr_is_untrusted(self, mock_get_setting, mock_settings):
+    def test_trusted_proxies_missing_remote_addr_is_untrusted(
+        self, mock_get_setting, mock_settings
+    ):
         """T1.3: a non-empty allowlist with no REMOTE_ADDR must be treated as untrusted."""
         mock_settings.DEBUG = False
 
@@ -243,7 +251,9 @@ class TestGatewayIdentityMiddleware:
 
     @patch("rebac.middleware.settings")
     @patch("rebac.middleware.get_setting")
-    def test_trusted_proxies_drop_still_allows_debug_fallback(self, mock_get_setting, mock_settings):
+    def test_trusted_proxies_drop_still_allows_debug_fallback(
+        self, mock_get_setting, mock_settings
+    ):
         """T1.3: dropping an untrusted header must not block the DEBUG local-dev fallback."""
         mock_settings.DEBUG = True
 
