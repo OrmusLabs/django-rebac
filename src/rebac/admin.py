@@ -74,6 +74,25 @@ if get_setting("ENABLE_OUTBOX_ADMIN"):  # pragma: no cover
             )
             logger.info("Admin %s re-queued %d ReBAC outbox tasks.", request.user, updated_count)
 
+        def changelist_view(self, request: HttpRequest, extra_context: Any | None = None):
+            """Alert on a FAILED backlog on every admin visit.
+
+            A FAILED row is permanent divergence; surfacing the count as a banner
+            (instead of relying on a human scrolling rows) is the admin-side half of
+            the detection story.
+            """
+            failed_count = (
+                self.get_queryset(request).filter(status=RebacSyncOutbox.Status.FAILED).count()
+            )
+            if failed_count:
+                messages.error(
+                    request,
+                    f"ReBAC outbox: {failed_count} task(s) are permanently FAILED. "
+                    "Fix the root cause, then use the 'Rescue: Re-queue selected FAILED "
+                    "tasks' action or `python manage.py rebac_reconcile --apply`.",
+                )
+            return super().changelist_view(request, extra_context)
+
         def has_add_permission(self, request: HttpRequest) -> bool:
             """
             Defensive Guard: Prevent manual creation of outbox records via the UI.

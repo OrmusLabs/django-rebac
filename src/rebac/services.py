@@ -43,6 +43,42 @@ class RebacTupleIngestionService:
                 RebacTupleIngestionService.trigger_sync()
 
     @staticmethod
+    def queue_tuples(tuples: list[dict[str, str]], trigger_worker: bool = True) -> int:
+        """Bulk-enqueues tuples into the outbox with a single ``bulk_create`` (T2.7).
+
+        Use this instead of N x `queue_tuple` for large batches (backfills, big
+        cascades): one INSERT instead of N, and no per-row savepoint. Pairs with the
+        idempotent write contract — replaying the same tuples is a no-op.
+
+        Args:
+            tuples: List of dicts, each with 'action' (WRITE/DELETE), 'user',
+                'relation', and 'object' — the same shape `queue_tuple` accepts.
+            trigger_worker: If True, schedules the Celery worker once on commit.
+
+        Returns:
+            int: Number of outbox rows created (0 for an empty list).
+        """
+        if not tuples:
+            return 0
+
+        rows = [
+            RebacSyncOutbox(
+                action=t["action"].value if hasattr(t["action"], "value") else t["action"],
+                user_id=t["user"],
+                relation=t["relation"],
+                object_id=t["object"],
+            )
+            for t in tuples
+        ]
+
+        with transaction.atomic():
+            created = RebacSyncOutbox.objects.bulk_create(rows)
+            if trigger_worker:
+                RebacTupleIngestionService.trigger_sync()
+
+        return len(created)
+
+    @staticmethod
     def trigger_sync() -> None:
         """Safely schedules the outbox drain after the transaction commits.
 

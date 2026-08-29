@@ -15,6 +15,7 @@ from openfga_sdk.client.models import (
     ConflictOptions,
 )
 from openfga_sdk.exceptions import ValidationException
+from openfga_sdk.models.read_request_tuple_key import ReadRequestTupleKey
 from openfga_sdk.sync import OpenFgaClient
 
 from rebac.backends.base.client import BaseReBACBackend
@@ -191,6 +192,55 @@ class OpenFGABackend(BaseReBACBackend):
 
         # T2.6: ignore missing tuples so outbox replays stay idempotent.
         self.client.write(request, options=_IDEMPOTENT_WRITE_OPTIONS)
+
+    def read_tuples(self, object: str) -> list[dict[str, str]]:
+        """Returns the relationship tuples the store currently holds for one object.
+
+        The read side of the sync contract — what makes the store verifiable.
+        `rebac_reconcile` diffs this against the tuples Django state expects, which is
+        what enables drift detection, orphan cleanup, and backfill verification.
+
+        Args:
+            object: The resource string (e.g., 'document:456').
+
+        Returns:
+            list[dict[str, str]]: The stored tuples for that object, each in the same
+                {'user', 'relation', 'object'} shape accepted by `write_tuples`.
+
+        Raises:
+            RebacSchemaError: If the store rejects the object as invalid.
+            RebacConnectionError: If the backend service is unreachable.
+        """
+        collected: list[dict[str, str]] = []
+        continuation_token: str | None = None
+
+        try:
+            while True:
+                page_options: dict[str, str] = dict(self._read_options or {})
+                if continuation_token:
+                    page_options["continuation_token"] = continuation_token
+
+                response = self.client.read(
+                    ReadRequestTupleKey(object=object),
+                    options=page_options or None,
+                )
+
+                for t in response.tuples:
+                    collected.append(
+                        {"user": t.key.user, "relation": t.key.relation, "object": t.key.object}
+                    )
+
+                continuation_token = response.continuation_token
+                if not continuation_token:
+                    break
+        except ValidationException as e:
+            logger.error(f"ReBAC ReadTuples Schema Mismatch: {e}")
+            raise RebacSchemaError(f"ReBAC Schema Mismatch reading {object}: {e}") from e
+        except Exception as e:
+            logger.error(f"ReBAC ReadTuples network error: {e}")
+            raise RebacConnectionError(f"ReBAC network error: {e}") from e
+
+        return collected
 
     def batch_check(self, checks: list[dict[str, str]]) -> dict[str, dict[str, bool]]:
         """

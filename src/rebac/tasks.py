@@ -49,7 +49,7 @@ def _sync_batch(pending_tasks: list[RebacSyncOutbox]) -> str:
     # order (created_at, id), so later rows overwrite earlier ones for the same key.
     latest: dict[tuple[str, str, str], RebacSyncOutbox] = {}
     for task in pending_tasks:
-        latest[(task.user_id, task.relation, task.object_id)] = task
+        latest[task.user_id, task.relation, task.object_id] = task
 
     writes: list[dict[str, str]] = []
     deletes: list[dict[str, str]] = []
@@ -93,6 +93,20 @@ def _record_batch_failure(pending_tasks: list[RebacSyncOutbox], max_retries: int
         if task.retry_count >= max_retries:
             task.status = RebacSyncOutbox.Status.FAILED
         task.save(update_fields=["retry_count", "status"])
+
+    # T2.7: a FAILED row is permanent divergence. Emit one structured ERROR line per
+    # batch (not per row) that log aggregation can key on, pointing at the two repair
+    # paths — detection must never depend on a user complaint.
+    failed_ids = [t.id for t in pending_tasks if t.status == RebacSyncOutbox.Status.FAILED]
+    if failed_ids:
+        logger.error(
+            "ReBAC outbox: %d row(s) permanently FAILED after %d retries: %s. "
+            "Repair: fix the root cause, then requeue via the admin action or run "
+            "`python manage.py rebac_reconcile --apply`.",
+            len(failed_ids),
+            max_retries,
+            failed_ids[:20],
+        )
 
 
 @shared_task(bind=True)

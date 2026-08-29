@@ -3,7 +3,9 @@ import importlib
 from functools import lru_cache
 from typing import Any
 
+from django.apps import apps
 from django.core.exceptions import ImproperlyConfigured
+from django.db import models
 
 from .backends.base import BaseReBACBackend
 from .conf import get_setting
@@ -40,3 +42,32 @@ def get_rebac_client() -> BaseReBACBackend:
         raise ImproperlyConfigured(
             f"Failed to initialize ReBAC backend '{backend_path}': {e}"
         ) from e
+
+
+def resolve_rebac_model(label: str) -> type[models.Model]:
+    """Resolves an 'app.Model' (or bare 'Model') label to a Django model class.
+
+    T2.7: shared by the `rebac_reconcile` and `rebac_backfill` management commands so
+    both label forms work regardless of how many apps the project installs.
+
+    Args:
+        label: 'myapp.Folder' or 'Folder'.
+
+    Returns:
+        type[models.Model]: The resolved model class.
+
+    Raises:
+        LookupError: If no installed app defines a model with that name.
+    """
+    if "." in label:
+        return apps.get_model(label)
+
+    # Bare label: resolve across all installed apps (get_model(None, ...) is not
+    # supported in every Django version, so scan the registry directly).
+    name = label.lower()
+    for app_config in apps.get_app_configs():
+        try:
+            return app_config.get_model(name)
+        except LookupError:
+            continue
+    raise LookupError(f"Model '{label}' not found in any installed app.")

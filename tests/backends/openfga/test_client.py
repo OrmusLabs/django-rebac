@@ -7,6 +7,7 @@ from openfga_sdk.client.models import (
     ClientWriteRequestOnMissingDeletes,
 )
 from openfga_sdk.exceptions import ValidationException
+from openfga_sdk.models.read_request_tuple_key import ReadRequestTupleKey
 
 from rebac.backends.base.exceptions import RebacConnectionError, RebacSchemaError
 from rebac.backends.openfga.client import OpenFGABackend
@@ -179,7 +180,7 @@ class TestOpenFGABackend:
         assert result == {}
 
     # ==========================================
-    # 🧪 5. T1.4 READ CONSISTENCY PREFERENCE
+    # 🧪 5. READ CONSISTENCY PREFERENCE
     # =========================================
     def test_read_options_none_by_default(self, fga_backend: OpenFGABackend):
         """T1.4: no consistency preference is forced by default (OpenFGA server default)."""
@@ -195,3 +196,50 @@ class TestOpenFGABackend:
 
         _, kwargs = backend.client.check.call_args
         assert kwargs["options"] == {"consistency": "HIGHER_CONSISTENCY"}
+
+    # ==========================================
+    # 🧪 6. READ TUPLES
+    # ==========================================
+    def test_read_tuples_returns_stored_tuples(self, fga_backend: OpenFGABackend):
+        """The read side of the sync contract — stored tuples come back as dicts."""
+        entry = MagicMock()
+        entry.key.user = "user:bob"
+        entry.key.relation = "viewer"
+        entry.key.object = "document:1"
+        fga_backend.client.read.return_value = MagicMock(tuples=[entry], continuation_token=None)
+
+        result = fga_backend.read_tuples("document:1")
+
+        assert result == [{"user": "user:bob", "relation": "viewer", "object": "document:1"}]
+        # The read MUST be scoped to the single object (filter), not a full-store scan.
+        arg = fga_backend.client.read.call_args.args[0]
+        assert isinstance(arg, ReadRequestTupleKey)
+        assert arg.object == "document:1"
+
+    def test_read_tuples_follows_continuation_token(self, fga_backend: OpenFGABackend):
+        """Paginated stores are drained completely before the diff is trusted."""
+        page_one = MagicMock(tuples=[], continuation_token="next-page")
+        page_two = MagicMock(tuples=[], continuation_token=None)
+        fga_backend.client.read.side_effect = [page_one, page_two]
+
+        fga_backend.read_tuples("document:1")
+
+        assert fga_backend.client.read.call_count == 2
+        second_options = fga_backend.client.read.call_args_list[1].kwargs["options"]
+        assert second_options == {"continuation_token": "next-page"}
+
+    def test_read_tuples_validation_exception_raises_schema_error(
+        self, fga_backend: OpenFGABackend
+    ):
+        """An invalid object surfaces as RebacSchemaError, not a bare SDK error."""
+        fga_backend.client.read.side_effect = ValidationException("Invalid object")
+
+        with pytest.raises(RebacSchemaError, match="ReBAC Schema Mismatch"):
+            fga_backend.read_tuples("not-a-type:1")
+
+    def test_read_tuples_network_error_raises_connection_error(self, fga_backend: OpenFGABackend):
+        """A store outage surfaces as RebacConnectionError so callers can abort cleanly."""
+        fga_backend.client.read.side_effect = Exception("Network timeout")
+
+        with pytest.raises(RebacConnectionError, match="ReBAC network error"):
+            fga_backend.read_tuples("document:1")

@@ -57,6 +57,28 @@ class BaseReBACBackend(ABC):  # pragma: no cover
         pass
 
     @abstractmethod
+    def read_tuples(self, object: str) -> list[dict[str, str]]:
+        """Returns the relationship tuples the store currently holds for one object.
+
+        T2.7: the read side of the sync contract. The outbox guarantees changes flow
+        Django -> store, but only this method makes the store verifiable: a reconciler
+        can diff what the store actually holds against what Django state expects, which
+        is what enables drift detection, orphan cleanup, and backfill verification.
+
+        Args:
+            object: The resource string (e.g., 'document:456').
+
+        Returns:
+            list[dict[str, str]]: The stored tuples for that object, each in the same
+                {'user', 'relation', 'object'} shape accepted by `write_tuples` and
+                `delete_tuples`.
+
+        Raises:
+            ConnectionError: If the backend service is unreachable.
+        """
+        pass
+
+    @abstractmethod
     def list_objects(self, user: str, relation: str, object_type: str) -> list[str]:
         """Returns a list of object IDs the user has the specified relation to."""
         pass
