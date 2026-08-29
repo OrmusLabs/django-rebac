@@ -20,6 +20,10 @@ DEFAULTS: dict[str, Any] = {
     # "INLINE" runs the drain in-process via `.apply()` so writes are visible
     #           immediately (recommended for local development and CI read-after-write).
     "SYNC_MODE": "ASYNC",
+    # T2.8: How long (seconds) an IN_FLIGHT outbox row may sit before the next
+    # drain reaps it — i.e., the window given to a claimed batch's worker to
+    # finish before its rows are treated as orphaned (worker died mid-call).
+    "IN_FLIGHT_TIMEOUT": 300,
     "REQUEST_HEADER_MAPPINGS": {
         "X-User-Id": "rebac_user",
         # "X-Context-Org-Id": "rebac_tenant",
@@ -64,6 +68,10 @@ Attributes:
          "ASYNC" (default) enqueues a Celery task (`.delay()`); "INLINE" runs the drain
          in-process (`.apply()`) so writes are visible immediately -- recommended for
          local development and CI to eliminate the create-then-read consistency gap.
+    IN_FLIGHT_TIMEOUT (int): How long (seconds) an IN_FLIGHT outbox row is allowed
+         to sit before the next drain reaps it as orphaned (its worker died
+         mid-call). The claim's row locks are already released, so this only
+         bounds how long a dead worker holds a row back. Defaults to `300`.
     REQUEST_HEADER_MAPPINGS (dict[str, str]): Mapping of incoming request
         headers to ReBAC context variables.
     ENABLE_OUTBOX_ADMIN (bool): If True, registers the ReBAC Outbox model in

@@ -25,6 +25,8 @@ This package solves this using the **Transactional Outbox Pattern**:
 
 This guarantees **eventual consistency**. If the the ReBAC engine server goes down, the Celery task will utilize exponential backoff to retry the batch later.
 
+The drain itself is lock-safe and crash-safe: each batch is **claimed** first (marked `IN_FLIGHT` in a short committed transaction, so row locks are never held across the network call), then pushed to the engine, then marked `SYNCED` — or returned to `PENDING` with a retry. If a worker dies mid-call, the next drain reaps its stale `IN_FLIGHT` rows (the window is bounded by `IN_FLIGHT_TIMEOUT`, default 300s) — at-least-once delivery with no permanently stuck rows.
+
 !!! note "Read-after-write"
     Because writes are pushed to the engine *after* the commit, a relationship you just wrote is only visible to authorization queries **after the outbox drains** — a create-then-read can briefly 403. See the [Read-After-Write Consistency](../getting-started/read-after-write.md) guide for the `SYNC_MODE` and `CONSISTENCY` knobs that close this window.
 ### Declarative Security

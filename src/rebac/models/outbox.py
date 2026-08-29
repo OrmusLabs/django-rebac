@@ -6,6 +6,10 @@ class RebacSyncOutbox(models.Model):
     class Status(models.TextChoices):
         # Database Value, Human Readable Label
         PENDING = "PEND", "⏳ " + _("Pending")
+        # T2.8: claimed by a worker, sync in flight. Transient: becomes SYNCED,
+        # returns to PENDING on failure, or is reaped by the next drain once
+        # IN_FLIGHT_TIMEOUT elapses (the claiming worker died mid-call).
+        IN_FLIGHT = "INFL", "🔄 " + _("In Flight")
         SYNCED = "SYNC", "✅ " + _("Synced")
         FAILED = "FAIL", "❌ " + _("Failed")
 
@@ -28,6 +32,10 @@ class RebacSyncOutbox(models.Model):
         db_index=True,
     )
     retry_count = models.IntegerField(default=0)
+    # T2.8: when this row was last claimed (set together with the IN_FLIGHT
+    # transition). The drain's reaper uses this to reclaim rows whose claiming
+    # worker died mid-call, so a dead worker can never stall a row forever.
+    claimed_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

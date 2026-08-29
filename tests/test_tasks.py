@@ -1,5 +1,8 @@
 # tests/test_tasks.py
+from datetime import timedelta
+
 import pytest
+from django.utils import timezone
 
 from rebac.models import RebacSyncOutbox
 from rebac.tasks import process_rebac_outbox_batch
@@ -205,3 +208,159 @@ class TestProcessOutboxBatch:
         assert task1.retry_count == 2
         assert task1.status == RebacSyncOutbox.Status.FAILED
         assert retry_mock.call_args.kwargs["max_retries"] == 2
+
+    # --- T2.8: no network I/O inside a locked transaction ---------------------
+
+    def test_claim_is_committed_in_flight_before_network_call(self, mock_rebac_client):
+        """T2.8: at the moment the network call runs, the claimed rows are already
+        IN_FLIGHT in the database (transaction #1 committed, locks released) —
+        not still PENDING rows held under open row locks."""
+        row = RebacSyncOutbox.objects.create(
+            action=RebacSyncOutbox.Action.WRITE,
+            user_id="user:1",
+            relation="viewer",
+            object_id="doc:1",
+        )
+
+        observed: dict[str, str] = {}
+
+        def observe(*args, **kwargs):
+            observed["status"] = RebacSyncOutbox.objects.get(pk=row.pk).status
+
+        mock_rebac_client.write_tuples.side_effect = observe
+
+        result = process_rebac_outbox_batch()
+
+        assert result == "Successfully synced 1 ReBAC tuples."
+        # Under the old single-transaction design this was still PENDING here.
+        assert observed["status"] == RebacSyncOutbox.Status.IN_FLIGHT
+        row.refresh_from_db()
+        assert row.status == RebacSyncOutbox.Status.SYNCED
+        assert row.claimed_at is not None
+
+    def test_fresh_in_flight_rows_are_not_stolen_by_another_drain(self, mock_rebac_client):
+        """T2.8: a row claimed by a live worker (IN_FLIGHT, fresh claim) must not
+        be reclaimed — only the IN_FLIGHT_TIMEOUT window releases it."""
+        row = RebacSyncOutbox.objects.create(
+            action=RebacSyncOutbox.Action.WRITE,
+            user_id="user:1",
+            relation="viewer",
+            object_id="doc:1",
+        )
+        RebacSyncOutbox.objects.filter(pk=row.pk).update(
+            status=RebacSyncOutbox.Status.IN_FLIGHT,
+            claimed_at=timezone.now(),
+        )
+
+        result = process_rebac_outbox_batch()
+
+        assert result == "No pending tasks."
+        mock_rebac_client.write_tuples.assert_not_called()
+        row.refresh_from_db()
+        assert row.status == RebacSyncOutbox.Status.IN_FLIGHT
+
+    def test_stale_in_flight_rows_are_reaped_and_synced(self, mock_rebac_client):
+        """T2.8: a worker died mid-call and left a row IN_FLIGHT. The next drain
+        reaps the stale claim and completes the sync — at-least-once, no loss."""
+        row = RebacSyncOutbox.objects.create(
+            action=RebacSyncOutbox.Action.WRITE,
+            user_id="user:1",
+            relation="viewer",
+            object_id="doc:1",
+        )
+        # Default IN_FLIGHT_TIMEOUT is 300s; age the claim past it.
+        stale = timezone.now() - timedelta(seconds=301)
+        RebacSyncOutbox.objects.filter(pk=row.pk).update(
+            status=RebacSyncOutbox.Status.IN_FLIGHT,
+            claimed_at=stale,
+        )
+
+        result = process_rebac_outbox_batch()
+
+        assert result == "Successfully synced 1 ReBAC tuples."
+        mock_rebac_client.write_tuples.assert_called_once()
+        row.refresh_from_db()
+        assert row.status == RebacSyncOutbox.Status.SYNCED
+
+    def test_reap_window_is_configurable(self, mock_rebac_client, settings):
+        """T2.8: IN_FLIGHT_TIMEOUT bounds the reap window and is read at runtime."""
+        settings.REBAC_CONFIG = {**settings.REBAC_CONFIG, "IN_FLIGHT_TIMEOUT": 1}
+
+        row = RebacSyncOutbox.objects.create(
+            action=RebacSyncOutbox.Action.WRITE,
+            user_id="user:1",
+            relation="viewer",
+            object_id="doc:1",
+        )
+        # 2s old > 1s window → reapable, even though the 300s default would not be.
+        stale = timezone.now() - timedelta(seconds=2)
+        RebacSyncOutbox.objects.filter(pk=row.pk).update(
+            status=RebacSyncOutbox.Status.IN_FLIGHT,
+            claimed_at=stale,
+        )
+
+        process_rebac_outbox_batch()
+
+        mock_rebac_client.write_tuples.assert_called_once()
+        row.refresh_from_db()
+        assert row.status == RebacSyncOutbox.Status.SYNCED
+
+    def test_stale_in_flight_rows_count_against_max_retries(self, mock_rebac_client, mocker):
+        """T2.8: a reclaimed stale row whose resend then fails still counts against
+        MAX_RETRIES, so the reaper can never loop a row forever."""
+        from celery.exceptions import Retry
+
+        row = RebacSyncOutbox.objects.create(
+            action=RebacSyncOutbox.Action.WRITE,
+            user_id="user:1",
+            relation="viewer",
+            object_id="doc:1",
+            retry_count=4,  # One attempt left (default MAX_RETRIES is 5).
+        )
+        stale = timezone.now() - timedelta(seconds=301)
+        RebacSyncOutbox.objects.filter(pk=row.pk).update(
+            status=RebacSyncOutbox.Status.IN_FLIGHT,
+            claimed_at=stale,
+        )
+
+        mock_rebac_client.write_tuples.side_effect = Exception("Backend Server Down")
+        mocker.patch("rebac.tasks.process_rebac_outbox_batch.retry", side_effect=Retry)
+
+        with pytest.raises(Retry):
+            process_rebac_outbox_batch()
+
+        row.refresh_from_db()
+        assert row.retry_count == 5
+        assert row.status == RebacSyncOutbox.Status.FAILED
+
+    def test_failure_bookkeeping_does_not_call_per_row_save(
+        self, mock_rebac_client, mocker, settings
+    ):
+        """T2.8 (minor): the failure path charges N rows with two bulk UPDATEs,
+        not one save() per row."""
+        from celery.exceptions import Retry
+
+        settings.REBAC_CONFIG = {**settings.REBAC_CONFIG, "BATCH_SIZE": 5}
+        rows = [
+            RebacSyncOutbox.objects.create(
+                action=RebacSyncOutbox.Action.WRITE,
+                user_id=f"user:{i}",
+                relation="viewer",
+                object_id=f"doc:{i}",
+            )
+            for i in range(3)
+        ]
+
+        mock_rebac_client.write_tuples.side_effect = Exception("Backend Server Down")
+        mocker.patch("rebac.tasks.process_rebac_outbox_batch.retry", side_effect=Retry)
+        save_mock = mocker.patch.object(RebacSyncOutbox, "save")
+
+        with pytest.raises(Retry):
+            process_rebac_outbox_batch()
+
+        # The old implementation did task.save() once per failed row.
+        save_mock.assert_not_called()
+        for row in rows:
+            row.refresh_from_db()
+            assert row.retry_count == 1
+            assert row.status == RebacSyncOutbox.Status.PENDING

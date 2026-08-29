@@ -30,6 +30,7 @@ if get_setting("ENABLE_OUTBOX_ADMIN"):  # pragma: no cover
             "user_id",
             "retry_count",
             "created_at",
+            "claimed_at",
         )
 
         list_filter = (
@@ -47,6 +48,7 @@ if get_setting("ENABLE_OUTBOX_ADMIN"):  # pragma: no cover
         readonly_fields = (
             "created_at",
             "updated_at",
+            "claimed_at",
         )
 
         ordering = ("-created_at",)
