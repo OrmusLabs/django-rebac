@@ -140,3 +140,80 @@ class TestRebacSerializers:
 
         assert data[0]["_permissions"]["can_read"] is False
         assert data[1]["_permissions"]["can_read"] is False
+
+    def test_list_serialization_evaluates_queryset_once(self, api_rf, mock_rebac_client):
+        """The batcher must materialize the queryset exactly once (no double fetch)."""
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        folder = MockFolder.objects.create(name="Doc", org_id="o1", creator_id="u1")
+        request = api_rf.get("/dummy/")
+        request.rebac_user = "user:bob"
+        mock_rebac_client.batch_check.return_value = {
+            f"folder:{folder.id}": {"can_read": True, "can_edit": False}
+        }
+
+        serializer = DummyFolderSerializer(
+            MockFolder.objects.all(), many=True, context={"request": request}
+        )
+
+        with CaptureQueriesContext(connection) as ctx:
+            data = serializer.data
+
+        selects = [q for q in ctx.captured_queries if q["sql"].strip().upper().startswith("SELECT")]
+        assert data[0]["_permissions"]["can_read"] is True
+        # One SELECT for the row data — not two (cloned `.all()` + original iteration).
+        assert len(selects) == 1
+
+    def test_shared_context_maps_are_namespaced_per_object_type(self, api_rf, mock_rebac_client):
+        """
+        DRF shares one context dict across the whole serializer tree. Two lists of
+        different object types must write to different keys, so serializing one can
+        never clobber the other's permissions map (context bleed).
+        """
+        from tests.models import MockOrganization
+
+        class DummyOrgSerializer(RebacPermissionSerializerMixin, serializers.ModelSerializer):
+            class Meta:
+                model = MockOrganization
+                fields = ("id", "name")
+
+                rebac_object_type = "organization"
+                rebac_permissions = ("can_view",)
+
+        # First rows of both tables share pk=1 — the exact collision condition.
+        folder = MockFolder.objects.create(name="F", org_id="o1", creator_id="u1")
+        org = MockOrganization.objects.create(name="O", creator_id="admin")
+        assert folder.pk == org.pk == 1
+
+        request = api_rf.get("/dummy/")
+        request.rebac_user = "user:bob"
+
+        context = {"request": request}
+        mock_rebac_client.batch_check.side_effect = [
+            {"folder:1": {"can_read": True, "can_edit": False}},
+            {"organization:1": {"can_view": True}},
+        ]
+
+        # 1. Serialize the folder list into the shared context.
+        folder_list = DummyFolderSerializer([folder], many=True, context=context)
+        folder_data = folder_list.data
+        assert folder_data[0]["_permissions"]["can_read"] is True
+
+        # 2. Serialize the organization list into the SAME context.
+        org_data = DummyOrgSerializer([org], many=True, context=context).data
+        assert org_data[0]["_permissions"]["can_view"] is True
+
+        # 3. The folder map must still be intact for late reads (e.g. a parent
+        #    list whose `_permissions` render after its nested list).
+        late = folder_list.child.get__permissions(folder)
+        assert late["can_read"] is True
+
+        # No unnamespaced shared key may exist; both maps coexist.
+        assert "rebac_permissions_map" not in context
+        assert context["rebac_permissions_map::folder"] == {
+            "folder:1": {"can_read": True, "can_edit": False}
+        }
+        assert context["rebac_permissions_map::organization"] == {
+            "organization:1": {"can_view": True}
+        }

@@ -213,7 +213,8 @@ class IsRebacAuthorized(permissions.BasePermission):
             elif config.lookup_url_kwarg:
                 object_id = view.kwargs.get(config.lookup_url_kwarg)
             else:
-                object_id = getattr(obj, "id", getattr(obj, "pk", None))
+                # `pk` first: custom/UUID primary keys may not expose an `.id` attribute.
+                object_id = getattr(obj, "pk", getattr(obj, "id", None))
 
             if not object_id:
                 logger.error("Authorization target lacks an identifier.")
@@ -230,14 +231,6 @@ class IsRebacAuthorized(permissions.BasePermission):
             except RebacError as e:
                 logger.error(f"ReBAC backend error during object check: {e}")
                 return False
-        # except ValidationException as e:
-        #     error_msg = (
-        #         f"ReBAC DSL Mismatch: The relation '{required_relation}' on type "
-        #         f"'{config.object_type}' does not exist in your OpenFGA schema. "
-        #         f"Please update your DSL or fix your RebacViewConfig."
-        #     )
-        #     logger.error(error_msg)
-        #     raise ImproperlyConfigured(error_msg) from e
         except Exception as e:
             logger.error(f"ReBAC network or validation error during object check: {e}")
             return False

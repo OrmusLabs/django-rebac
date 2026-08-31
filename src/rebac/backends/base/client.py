@@ -94,5 +94,14 @@ class BaseReBACBackend(ABC):  # pragma: no cover
         Returns:
             dict[str, dict[str, bool]]: A fast-lookup mapping formatted as:
                                         { "object_id": { "relation": True/False } }
+
+        Raises:
+            ConnectionError: If the backend service is unreachable.
+            SchemaError: If the store rejects a check (unknown relation or type).
+
+        Implementations MUST let transport/schema failures propagate (as subclasses
+        of `RebacError`) instead of returning a partial or empty map: callers rely
+        on the exception to distinguish "no permission" from
+        "authorization backend is down".
         """
         pass

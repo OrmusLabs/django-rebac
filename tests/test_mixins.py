@@ -242,3 +242,58 @@ class TestRebacDeletionMechanisms:
         assert f"parent:{parent_pk}" in deleted_objects
         assert f"child:{child_1_pk}" in deleted_objects
         assert f"child:{child_2_pk}" in deleted_objects
+
+
+class TestRebacModelSyncMixinBaselining:
+    """T4.14/T4.15: lazy tuple baselining and the documented bypass surface."""
+
+    def test_refresh_from_db_refreshes_the_tuple_baseline(self):
+        """After refresh_from_db(), save() must diff against the current DB state —
+        not the stale state from when the instance was first loaded."""
+        folder = MockFolder.objects.create(name="F", org_id="o1", creator_id="user_alice")
+        folder_id = folder.pk
+        RebacSyncOutbox.objects.all().delete()
+
+        # Simulate an external writer (another service / raw SQL / QuerySet.update())
+        # moving the grant while this instance is in memory.
+        MockFolder.objects.filter(pk=folder_id).update(creator_id="user_bob")
+
+        folder.refresh_from_db()
+        folder.creator_id = "user_carol"
+        folder.save()
+
+        deleted = set(
+            RebacSyncOutbox.objects.filter(action=RebacSyncOutbox.Action.DELETE).values_list(
+                "user_id", flat=True
+            )
+        )
+        written = set(
+            RebacSyncOutbox.objects.filter(action=RebacSyncOutbox.Action.WRITE).values_list(
+                "user_id", flat=True
+            )
+        )
+
+        # The grant currently held in the DB (bob) must be revoked. With the old
+        # stale baseline (alice), bob's grant was silently retained forever.
+        assert "user:user_bob" in deleted
+        assert "user:user_carol" in written
+
+    def test_loading_rows_does_not_generate_tuples(self, mocker):
+        """The read path must not trigger tuple generation (no N+1, no wasted work)."""
+        spy = mocker.patch("rebac.models.mixins.RebacTupleAdapter.generate_tuples")
+        spy.return_value = []
+        MockFolder.objects.create(name="F", org_id="o1", creator_id="u1")
+        spy.reset_mock()
+
+        # Pure read path: fetch all rows and touch attributes, never save.
+        for f in MockFolder.objects.all():
+            assert f.name == "F"
+
+        spy.assert_not_called()
+
+    def test_docstring_documents_the_full_bypass_surface(self):
+        """The limitations note must name the common bypass paths, not just bulk_create."""
+        doc = RebacModelSyncMixin.__doc__ or ""
+        assert "QuerySet.update()" in doc
+        assert "bulk_update" in doc
+        assert "bulk_create" in doc

@@ -225,6 +225,26 @@ class TestViewsAndMixins:
         # Compare the compiled SQL strings, because DRF clones the queryset in memory
         assert str(qs.query) == str(view.queryset.all().query)
 
+    def test_RebacViewMixin_get_queryset_detail_route_custom_lookup_kwarg(
+        self, api_rf, mock_rebac_client
+    ):
+        """A detail request using a custom `lookup_url_kwarg` must also bypass list
+        filtering (previously only `self.lookup_field` was checked)."""
+        view = DummyRebacViewMixin()
+        view.request = api_rf.get("/dummy/acme/")
+        view.request.rebac_user = "user:bob"
+
+        # Custom kwarg name — the old code only checked `self.lookup_field` ("pk").
+        view.kwargs = {"org_id": "acme"}
+        view.rebac_config = RebacViewConfig(
+            object_type="folder", read_relation="can_read", lookup_url_kwarg="org_id"
+        )
+
+        qs = view.get_queryset()
+
+        assert str(qs.query) == str(view.queryset.all().query)
+        mock_rebac_client.list_objects.assert_not_called()
+
     def test_RebacViewMixin_get_queryset_missing_config(self, api_rf):
         """Verifies get_queryset bypasses FGA safely if list_relation is missing."""
         view = DummyRebacViewMixin()

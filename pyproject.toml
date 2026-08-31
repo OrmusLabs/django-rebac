@@ -113,7 +113,7 @@ source = ["src/rebac"]
 # Exclude files that do not contain business logic
 omit = [
     "src/rebac/apps.py",
-    "src/rebac/backends/base.py",
+    "src/rebac/backends/base/client.py",
     "src/rebac/admin.py",
     "*/migrations/*",
     "__init__.py"

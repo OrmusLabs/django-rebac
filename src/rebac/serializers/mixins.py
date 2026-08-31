@@ -47,7 +47,9 @@ class RebacPermissionSerializerMixin(serializers.Serializer):
             return {}
 
         object_key = f"{rebac_object_type}:{obj.pk}"
-        batch_map = self.context.get("rebac_permissions_map")
+        # Namespaced per object type to match the batcher — otherwise a nested
+        # list of a different type overwrites this one's map in the shared context.
+        batch_map = self.context.get(f"rebac_permissions_map::{rebac_object_type}")
 
         if batch_map is not None:
             return batch_map.get(object_key, {perm: False for perm in rebac_permissions})

@@ -26,15 +26,17 @@ class RebacBatchListSerializer(serializers.ListSerializer):
         if not rebac_user:
             return super().to_representation(data)
 
-        iterable = data.all() if hasattr(data, "all") else list(data)
+        # Materialize the queryset exactly once. (Previously `data.all()` cloned
+        # the queryset and `super()` re-iterated the original — two full fetches.)
+        iterable = list(data)
         if not iterable:
-            return super().to_representation(data)
+            return super().to_representation(iterable)
 
         rebac_object_type = getattr(self.child.Meta, "rebac_object_type", None)
         rebac_permissions = getattr(self.child.Meta, "rebac_permissions", [])
 
         if not rebac_object_type or not rebac_permissions:
-            return super().to_representation(data)
+            return super().to_representation(iterable)
 
         # Build pure agnostic check dictionaries
         checks = []
@@ -43,12 +45,16 @@ class RebacBatchListSerializer(serializers.ListSerializer):
             for perm in rebac_permissions:
                 checks.append({"user": rebac_user, "relation": perm, "object": object_key})
 
-        # Execute via the abstract interface
+        # Execute via the abstract interface.
+        # The context key is namespaced per object type: DRF shares one context
+        # dict across the whole serializer tree, so an unnamespaced key would let
+        # a nested list of a different type clobber this one's permissions map.
         rebac_client = get_rebac_client()
+        map_key = f"rebac_permissions_map::{rebac_object_type}"
         try:
-            self.context["rebac_permissions_map"] = rebac_client.batch_check(checks)
+            self.context[map_key] = rebac_client.batch_check(checks)
         except RebacError as e:
             logger.error(f"ReBAC batch list check failed: {e}")
-            self.context["rebac_permissions_map"] = {}
+            self.context[map_key] = {}
 
-        return super().to_representation(data)
+        return super().to_representation(iterable)

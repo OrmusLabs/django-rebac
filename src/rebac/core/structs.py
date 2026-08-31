@@ -1,4 +1,5 @@
 # rebac/structs.py
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 
 __all__ = [
@@ -6,7 +7,38 @@ __all__ = [
     "RebacModelConfig",
     "RebacParentConfig",
     "RebacViewConfig",
+    "clear_registered_view_configs",
+    "iter_registered_view_configs",
+    "register_view_config",
 ]
+
+
+def register_view_config(config: "RebacViewConfig") -> None:
+    """Records a defined RebacViewConfig for startup validation (T3.12).
+
+    Deduplicated by value: defining the same config twice (e.g., a shared
+    config constant) registers once. A list — not a set — because the
+    dataclass's generated ``__hash__`` is unhashable for dict fields
+    (``action_relations``).
+    """
+    if config not in _REGISTERED_VIEW_CONFIGS:
+        _REGISTERED_VIEW_CONFIGS.append(config)
+
+
+def iter_registered_view_configs() -> Iterator["RebacViewConfig"]:
+    """Yields every RebacViewConfig defined in this process (T3.12)."""
+    yield from _REGISTERED_VIEW_CONFIGS
+
+
+def clear_registered_view_configs() -> None:
+    """Test helper: empties the registry."""
+    _REGISTERED_VIEW_CONFIGS.clear()
+
+
+# T3.12: every RebacViewConfig is self-registered on construction so the Django
+# system checks (rebac.E002) can validate them at startup — views live in many
+# apps and are otherwise unreachable from `apps.get_models()`.
+_REGISTERED_VIEW_CONFIGS: list["RebacViewConfig"] = []
 
 
 @dataclass(frozen=True)
@@ -215,3 +247,7 @@ class RebacViewConfig:
                 "If defining ReBAC parent creation rules, 'create_scope_type', "
                 "'create_scop_field', and 'create_relation' must all be provided."
             )
+
+        # T3.12: register for the startup system checks (rebac.E002) — see the
+        # registry at the top of this module.
+        register_view_config(self)

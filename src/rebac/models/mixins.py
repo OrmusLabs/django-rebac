@@ -1,6 +1,7 @@
 # rebac/mixins.py
 import logging
 import uuid
+from types import SimpleNamespace
 from typing import Any, ClassVar
 
 from django.core.exceptions import ImproperlyConfigured
@@ -111,12 +112,24 @@ class RebacModelSyncMixin:
         ```
 
     Notes:
-        **Limitations:**
-        Because this mixin relies on intercepting the `save()` method for the
-        Transactional Outbox pattern, standard Django bulk operations
-        (e.g., `Document.objects.bulk_create()`) will bypass this mixin.
-        You must save instances individually or trigger the outbox manually
-        for bulk operations.
+        **Limitations — code paths that bypass the outbox:**
+        Because this mixin relies on intercepting `save()` (and the `pre_delete`
+        signal) for the Transactional Outbox pattern, any path that changes
+        ownership fields without calling `save()` will NOT sync ReBAC tuples:
+
+        - `QuerySet.update()` — the most common offender: it issues raw SQL,
+          fires no signals and calls no `save()`.
+        - `QuerySet.bulk_update()`
+        - `Manager.bulk_create()`
+        - Raw SQL, DB-level triggers, or cascades created outside Django.
+
+        For these, either save instances individually or enqueue the tuples in
+        one batch via `RebacTupleIngestionService.queue_tuples(...)`.
+
+        **Deletions ARE covered** (including `QuerySet.delete()` and true FK
+        `on_delete=CASCADE` edges) by a framework `pre_delete` receiver — but
+        because that receiver fires per row, Django can no longer fast-delete
+        these models, so very large deletions are slow.
     """
 
     rebac_config: ClassVar[RebacModelConfig | None] = None
@@ -183,11 +196,66 @@ class RebacModelSyncMixin:
         super().__init__(*args, **kwargs)
 
         # Fail fast on instantiation if misconfigured
-        config = self._get_validated_config()
+        self._get_validated_config()
 
-        # Delegate tuple generation to the adapter
-        self._original_tuples = RebacTupleAdapter.generate_tuples(self, config) if self.pk else []
+        # T4.14: The tuple diff baseline is computed lazily on first save() —
+        # never on the read path. Loading a row must not generate tuples or
+        # touch FK/deferred fields (that caused N+1 queries on list views).
+        self._original_tuples: list[dict[str, str]] | None = None
+        self._rebac_loaded_values: dict[str, Any] | None = None
         self._rebac_task_scheduled = False
+
+    @classmethod
+    def from_db(cls, db: Any, field_names: list[str], values: list[Any]) -> Any:
+        """T4.14: Snapshot the row exactly as loaded, so the first ``save()``
+        can diff against the true database state instead of a stale one."""
+        instance = super().from_db(db, field_names, values)  # type: ignore[misc]
+        instance._rebac_loaded_values = dict(zip(field_names, values, strict=False))
+        return instance
+
+    def refresh_from_db(self, *args: Any, **kwargs: Any) -> None:
+        """T4.14: Re-baseline after reloading.
+
+        Without this, ``save()`` would diff against the tuple state captured
+        when the instance was first instantiated — silently retaining grants
+        that changed in the database while the instance was in memory
+        (privilege retention).
+        """
+        super().refresh_from_db(*args, **kwargs)  # type: ignore[misc]
+        self._original_tuples = None
+        self._rebac_loaded_values = self._capture_loaded_values()
+
+    def _capture_loaded_values(self) -> dict[str, Any]:
+        """Reads the concrete field values off the instance without touching
+        deferred fields."""
+        deferred = self.get_deferred_fields()  # type: ignore[attr-defined]
+        return {
+            field.attname: getattr(self, field.attname)
+            for field in self._meta.concrete_fields  # type: ignore[attr-defined]
+            if field.attname not in deferred
+        }
+
+    def _baseline_tuples(self) -> list[dict[str, str]]:
+        """Lazily computes the 'original' tuple state used by ``save()`` for diffing."""
+        if self._original_tuples is not None:
+            return self._original_tuples
+
+        if not getattr(self, "pk", None):
+            self._original_tuples = []
+            return self._original_tuples
+
+        config = self._get_validated_config()
+        if self._rebac_loaded_values is not None:
+            # Generate from the loaded snapshot instead of the live instance so
+            # we never trigger relation/deferred-field fetches here.
+            snapshot = SimpleNamespace(**self._rebac_loaded_values)
+            snapshot.pk = getattr(self, "pk", None)
+            self._original_tuples = RebacTupleAdapter.generate_tuples(snapshot, config)
+        else:
+            # Instance constructed via __init__ with a pk (never loaded from DB).
+            self._original_tuples = RebacTupleAdapter.generate_tuples(self, config)
+
+        return self._original_tuples
 
     def save(self, *args: Any, **kwargs: Any) -> None:
         is_new = bool(self._state.adding)  # type: ignore[attr-defined]
@@ -203,7 +271,7 @@ class RebacModelSyncMixin:
                     self._queue_outbox(RebacSyncOutbox.Action.WRITE, t)  # type: ignore[arg-type]
             else:
                 to_delete, to_write = RebacTupleAdapter.compute_diffs(
-                    self._original_tuples, current_tuples
+                    self._baseline_tuples(), current_tuples
                 )
 
                 for t in to_delete:

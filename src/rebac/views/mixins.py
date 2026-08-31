@@ -121,13 +121,14 @@ class RebacViewMixin:
 
     def get_queryset(self) -> Any:
         queryset = super().get_queryset()  # type: ignore[misc]
+        config = self._get_config()
         view_kwargs = getattr(self, "kwargs", {})
 
-        # 1. Bypass if this is a Detail request (e.g., /api/companies/1/)
-        if view_kwargs.get(self.lookup_field):
+        # 1. Bypass if this is a Detail request (e.g., /api/companies/1/).
+        #    Honor a custom `lookup_url_kwarg` name, not just `self.lookup_field`.
+        lookup_key = config.lookup_url_kwarg or self.lookup_field
+        if view_kwargs.get(lookup_key):
             return queryset
-
-        config = self._get_config()
 
         # 2. Explicitly bypass ReBAC filtering if requested
         if config.disable_list_filter:
@@ -151,7 +152,8 @@ class RebacViewMixin:
                 logger.error(error_msg)
                 raise ImproperlyConfigured(error_msg) from e
 
-            return queryset.filter(id__in=allowed_ids)
+            # `pk__in` works with any primary-key type/attname (int, UUID, slug).
+            return queryset.filter(pk__in=allowed_ids)
 
         return queryset
 
