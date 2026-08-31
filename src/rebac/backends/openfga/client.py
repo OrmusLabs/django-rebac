@@ -39,6 +39,11 @@ _IDEMPOTENT_WRITE_OPTIONS: dict[str, Any] = {
     )
 }
 
+# The SDK types its `options` parameter as this (see `openfga_sdk/client/client.py`);
+# a narrower `dict[str, str]` is rejected by mypy in environments with typed SDK
+# stubs (dict invariance).
+FgaClientOptions = dict[str, int | str | dict[str, int | str]]
+
 
 class OpenFGABackend(BaseReBACBackend):
     """OpenFGA implementation of the ReBAC Backend contract.
@@ -97,7 +102,7 @@ class OpenFGABackend(BaseReBACBackend):
         # "MINIMAL_CONSISTENCY" in BACKEND_OPTIONS to trade freshness for latency on
         # high-traffic list endpoints.
         consistency = self.options.get("CONSISTENCY")
-        self._read_options: dict[str, str] | None = (
+        self._read_options: FgaClientOptions | None = (
             {"consistency": consistency} if consistency else None
         )
 
@@ -336,7 +341,7 @@ class OpenFGABackend(BaseReBACBackend):
 
         try:
             while True:
-                page_options: dict[str, str] = dict(self._read_options or {})
+                page_options: FgaClientOptions = dict(self._read_options or {})
                 if continuation_token:
                     page_options["continuation_token"] = continuation_token
 
