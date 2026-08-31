@@ -27,6 +27,47 @@ Under the hood, `get_rebac_client()` fetches the necessary environment configura
 
 **Performance Note:** It utilizes Python's `@lru_cache` to act as a thread-safe **Singleton**, ensuring the underlying HTTP connection pool is reused across requests for maximum performance.
 
+### 🔐 Production OpenFGA options (T3.10)
+
+Everything the OpenFGA SDK needs for a real deployment is plumbed from `BACKEND_OPTIONS`. All of these default to `None` — unset options keep the SDK's own defaults, so an unauthenticated `localhost:8080` keeps working unchanged.
+
+```python
+REBAC_CONFIG = {
+    "BACKEND_OPTIONS": {
+        "API_URL": "https://your-fga.example.com",
+        "STORE_ID": os.environ["FGA_STORE_ID"],
+
+        # Authentication — required for FGA managed service, Auth0 FGA, or any
+        # secured self-hosted deployment:
+        "CREDENTIALS": {
+            # Option A: static API token
+            "method": "api_token",
+            "api_token": os.environ["FGA_API_TOKEN"],
+            # Option B: OAuth2 client credentials
+            # "method": "client_credentials",
+            # "client_id": "...", "client_secret": "...",
+            # "api_issuer": "https://auth.example.com",
+            # "api_audience": "...", "scopes": "openid profile",
+        },
+
+        # Pin the authorization model (ULID) so checks evaluate against a KNOWN
+        # schema. Safe DSL migration = pin current → write new → verify → flip pin.
+        "AUTHORIZATION_MODEL_ID": os.environ.get("FGA_MODEL_ID"),
+
+        # HTTP timeout (ms). Without it a hung store holds its connection forever.
+        "TIMEOUT_MILLISEC": 5000,
+
+        # SDK-level retry of transient 429/5xx before the outbox retry loop.
+        "RETRY_PARAMS": {"max_retry": 3, "min_wait_in_ms": 100, "max_wait_in_sec": 120},
+
+        # Private CA bundle for mTLS / internal CA deployments.
+        "SSL_CA_CERT": "/etc/ssl/private-ca.pem",
+    },
+}
+```
+
+Malformed `CREDENTIALS` (unknown method, missing parts) or `RETRY_PARAMS` raise `OpenFGAConfigurationError` at client initialization — a configuration mistake fails loudly at startup instead of per request.
+
 ::: rebac.utils
     options:
       show_root_heading: false

@@ -29,7 +29,17 @@ FINANCE_DASHBOARD_CONFIG = {
 ```
 
 ### 2. The Dashboard View
-Notice how this view does not import any local models at the top of the file, and relies entirely on the `HTTP_X_CONTEXT_ORG_ID` header for its ReBAC authorization check.
+
+> !!! note "Two different headers — do not confuse them"
+> - **Identity header** (e.g. `X-User-Id`): set by your trusted authentication
+>   proxy (Traefik forward-auth), never forwarded from the client. The
+>   `GatewayIdentityMiddleware` reads it to establish *who is asking*.
+> - **Context header** (e.g. `X-Context-Org-Id`): carries the *target object ID*
+>   (the `lookup_header`) — *what* the request is about. It must be set by a
+>   trusted gateway/routing layer that strips any inbound value, exactly like
+>   the identity header; it is not a user credential.
+
+Notice how this view does not import any local models at the top of the file, and relies entirely on the `HTTP_X_CONTEXT_ORG_ID` *context* header (not the identity header) for its ReBAC authorization check.
 
 ```python
 # views.py
@@ -65,7 +75,8 @@ class FinanceDashboardView(APIView):
     )
 
     def get(self, request):
-        # 1. Extract the authorized Org ID from the Traefik Gateway
+        # 1. Extract the target Org ID from the gateway-set context header
+        #    (distinct from the X-User-Id identity header)
         org_id = request.META.get("HTTP_X_CONTEXT_ORG_ID")
 
         # 2. Dynamically load the configured models into memory
@@ -139,7 +150,10 @@ class Expense(RebacModelSyncMixin, models.Model):
         object_type="expense",
         parents=[
             RebacParentConfig(
-                relation="organization",
+                # Must match the relation defined on `type expense` in the DSL
+                # below — `parent_org`, not `organization` (writing a relation the
+                # store doesn't define fails validation and lands in FAILED).
+                relation="parent_org",
                 parent_type="organization",
                 local_field="organization_id"
             )

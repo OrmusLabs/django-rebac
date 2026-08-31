@@ -134,127 +134,46 @@ class Employee(RebacModelSyncMixin, models.Model):
 
 ---
 
-## The `CASCADE` and Bulk Deletion Trap
+## Deletions, `CASCADE`, and Bulk Operations
 
-**Architectural Warning:** The `RebacModelSyncMixin` guarantees synchronization by intercepting the `.delete()` method on *individual* model instances.
+**Good news first: deletions are handled for you automatically.** When a model class
+inherits `RebacModelSyncMixin`, the framework connects a `pre_delete` receiver
+(`_rebac_auto_cascade_handler`) for that class automatically (via `__init_subclass__`).
+Every deletion path that goes through the Django ORM therefore already queues the
+correct `DELETE` tuples in the outbox, including:
 
-Because of how Django optimizes database queries, **bulk deletions completely bypass instance-level `.delete()` methods.** This happens in two common scenarios:
+- `instance.delete()`
+- `QuerySet.delete()` (e.g., `Document.objects.filter(is_archived=True).delete()`)
+- True FK `on_delete=models.CASCADE` edges — delete a `Folder` and the tuples of every
+  cascaded `Document` are queued for removal.
 
-1. **Bulk QuerySet Deletions:** Calling `Document.objects.filter(is_archived=True).delete()` directly in a view or task.
-2. **SQL Cascades:** When a parent object is deleted and `on_delete=models.CASCADE` triggers the removal of child objects under the hood.
+> !!! warning "Do NOT register your own `pre_delete` receiver for ReBAC cleanup"
+> The framework already installs one for every `RebacModelSyncMixin` subclass.
+> A second receiver queues **duplicate** `DELETE` rows for the same tuple in the
+> outbox, polluting the queue and (against a non-idempotent backend) poisoning the
+> entire sync batch.
 
-**The Result (The Silent Failure):** The records will be successfully removed from your PostgreSQL database, but the `RebacModelSyncMixin` will never be triggered. Their corresponding relationships will be **permanently orphaned** in the ReBAC graph, leading to phantom permissions and a polluted authorization store.
+### Performance note: large deletions are slow, not broken
 
-To maintain perfect eventual consistency, you must explicitly orchestrate these dual-writes. Here are the two production-ready approaches:
+Because the receiver fires once per row, Django's fast-delete path is disabled for
+these models: a 100k-row `QuerySet.delete()` loads 100k instances and inserts one
+outbox row per tuple in a single transaction. That is correct behavior, but it will
+be slow and memory-hungry. For very large cleanups, delete in bounded chunks (for
+example, loop over a pk range with `iterator(chunk_size=1000)`) instead of one
+giant `delete()` call.
 
-### Approach 1: The Domain Service Layer
-> Recommended
+### What is NOT covered
 
-Instead of calling `folder.delete()` directly in a view, encapsulate the deletion logic within a Domain Service. This decouples the business logic from the ORM and forces the mixin to execute for every child.
+These paths change rows without calling `save()` or firing signals — ReBAC tuples
+will silently stop matching the database:
 
-```python
-import logging
-from typing import Any
+| Bypass | Why it happens | Remediation |
+|--------|---------------|-------------|
+| `QuerySet.update(...)` | Raw SQL, no signals, no `save()` | Save instances individually, or enqueue the new tuples via `RebacTupleIngestionService.queue_tuples(...)` |
+| `QuerySet.bulk_update(...)` | Same as above | Same as above |
+| `Manager.bulk_create(...)` | Skips `save()` entirely | Save individually, or enqueue via `queue_tuples(...)` |
+| Raw SQL, DB-level triggers, or cascades created outside Django | Never enter the Django ORM | Keep such edges out of ReBAC-managed models, or sync manually |
 
-from django.db import transaction
-
-from .models import Folder, Document
-
-logger = logging.getLogger(__name__)
-
-class FolderService:
-    """Domain service for orchestrating Folder lifecycles and ReBAC sync."""
-
-    @staticmethod
-    def delete_folder(folder: Folder) -> bool:
-        """
-        Safely deletes a Folder and its child Documents, explicitly triggering
-        the RebacModelSyncMixin for all cascading dependencies.
-
-        Args:
-            folder: The Folder instance to be deleted.
-
-        Returns:
-            bool: True if deletion was successful.
-        """
-        # Fail fast on invalid inputs
-        if not folder or not folder.pk:
-            logger.warning("Attempted to delete an invalid or unsaved Folder.")
-            return False
-
-        try:
-            with transaction.atomic():
-                # 1. Fetch all child documents explicitly into memory
-                documents = Document.objects.filter(folder=folder)
-
-                # 2. Iterate and call .delete() individually.
-                # This guarantees the RebacModelSyncMixin intercepts each deletion
-                # and queues the ReBAC tuples into the transactional outbox.
-                for doc in documents:
-                    doc.delete()
-
-                # 3. Finally, delete the parent folder
-                folder.delete()
-
-            return True
-        except Exception as e:
-            logger.error(f"Failed to delete Folder {folder.pk}: {e}")
-            raise
-```
-
-**How it works:** It ensures strict transactional integrity. By wrapping the iteration in `transaction.atomic()`, if the ReBAC Outbox insert fails for even a single document, the physical Django deletion rolls back, maintaining absolute eventual consistency between your database and the authorization graph.
-
-### Approach 2: Django Signals
-> The Admin-Friendly Fallback
-
-If you rely heavily on the built-in Django Admin panel or cannot refactor to a Service layer, utilize Django's `pre_delete` signal. While bulk cascades bypass the `.delete()` method, Django *does* emit `pre_delete` signals for every object destroyed during a cascade.
-
-```python
-import logging
-from typing import Any
-
-from django.db.models.signals import pre_delete
-from django.dispatch import receiver
-
-from rebac.adapters import RebacTupleAdapter
-from rebac.models import RebacSyncOutbox
-from .models import Document
-
-logger = logging.getLogger(__name__)
-
-@receiver(pre_delete, sender=Document)
-def queue_rebac_deletion_on_cascade(
-    sender: type[Document],
-    instance: Document,
-    **kwargs: Any
-) -> None:
-    """
-    Intercepts Document deletions, specifically catching SQL bulk cascades,
-    to ensure ReBAC tuples are queued for deletion in the Outbox.
-
-    Args:
-        sender: The model class broadcasting the signal.
-        instance: The specific Document being deleted.
-        kwargs: Additional signal keyword arguments.
-    """
-    # Defensive check: Ensure instance is valid and configured for ReBAC
-    if not instance.pk or not getattr(instance, 'rebac_config', None):
-        return
-
-    try:
-        # 1. Generate the tuples representing the current ReBAC graph state
-        tuples_to_delete = RebacTupleAdapter.generate_tuples(
-            instance,
-            instance.rebac_config
-        )
-
-        # 2. Utilize the mixin's internal queueing mechanism
-        # This automatically triggers the Celery worker via transaction.on_commit
-        for t in tuples_to_delete:
-            instance._queue_outbox(RebacSyncOutbox.Action.DELETE, t)
-
-    except Exception as e:
-        logger.error(f"Signal failure during ReBAC tuple generation for {instance.pk}: {e}")
-```
-
-**How it works:** It provides a "catch-all" safety net that works even when a developer (or the Django Admin interface) triggers a cascade directly via the ORM (`Folder.objects.filter(...).delete()`).
+`RebacTupleIngestionService.queue_tuples(tuples)` bulk-enqueues a list of
+`{"user", "relation", "object"}` dictionaries in a single `bulk_create` — the
+intended tool for backfills and mass operations.
